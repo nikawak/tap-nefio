@@ -3,6 +3,15 @@ const currencies = ['BYN', 'RUB', 'KZT', 'USD', 'EUR'];
 const themes = ['coffee', 'indigo', 'garden', 'lavender'];
 const reserved = new Set(['admin', 'api', 'assets', 'callback', 'signin-with-chatgpt', 'signout-with-chatgpt', 'favicon.ico']);
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const nfcPath = /^\/(?:([a-z0-9-]+)\/)?nfc=([A-Za-z0-9_-]{1,128})\/?$/;
+const googleFlowCookie = '__Host-tap-google-flow';
+const googleSessionCookie = '__Host-tap-session';
+const googleReturnPath = '/auth/google/return';
+const googleFlowAge = 600;
+const googleSessionAge = 8 * 3600;
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+let googleKeys;
 const dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Minsk', year: 'numeric', month: '2-digit', day: '2-digit' });
 const dayKey = (date = new Date()) => dayFmt.format(date);
 const todayOffset = (days) => new Date(Date.parse(dayKey() + 'T00:00:00Z') + days * 86400000).toISOString().slice(0, 10);
@@ -11,15 +20,29 @@ const q = (db, sql, ...values) => values.length ? db.prepare(sql).bind(...values
 const all = async (db, sql, ...values) => (await q(db, sql, ...values).all()).results;
 const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
 const json = (value, status = 200) => Response.json(value, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
-const redirect = (url) => new Response(null, { status: 303, headers: { Location: url, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' } });
+function redirect(url, cookies = []) {
+  const headers = new Headers({ Location: url, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
+  for (const cookie of cookies) headers.append('Set-Cookie', cookie);
+  return new Response(null, { status: 303, headers });
+}
 const findSite = (db, slug) => q(db, 'SELECT * FROM sites WHERE slug = ?', slug).first();
 const normalizeEmail = (value) => String(value ?? '').trim().toLowerCase();
 
-function actor(request, env) {
+const googleReady = (env, url) => !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && url.protocol === 'https:');
+const nowSeconds = () => Math.floor(Date.now() / 1000);
+
+function actorFor(env, email, name, provider) {
+  return { role: email === normalizeEmail(env.OWNER_EMAIL) ? 'owner' : 'manager',
+    name: name || email.split('@')[0], email, demo: false, provider };
+}
+
+async function actor(request, env) {
   if (env.DEMO_MODE) {
     if (request.headers.get('x-demo-role') === 'manager') return { role: 'manager', name: 'Анна', email: 'manager@demo.tap', demo: true };
     return { role: 'owner', name: 'Владелец', email: 'owner@demo.tap', demo: true };
   }
+  const googleUser = await googleActor(request, env);
+  if (googleUser) return googleUser;
   if (!request.headers.get('oai-authenticated-user-id')) return null;
   const email = normalizeEmail(request.headers.get('oai-authenticated-user-email'));
   if (!email) return null;
@@ -28,7 +51,121 @@ function actor(request, env) {
   if (rawName && request.headers.get('oai-authenticated-user-full-name-encoding') === 'percent-encoded-utf-8') {
     try { name = decodeURIComponent(rawName); } catch { name = email.split('@')[0]; }
   }
-  return { role: email === normalizeEmail(env.OWNER_EMAIL) ? 'owner' : 'manager', name, email, demo: false };
+  return actorFor(env, email, name, 'chatgpt');
+}
+
+function base64url(bytes) {
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function fromBase64url(value) {
+  return Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/')), (part) => part.charCodeAt(0));
+}
+
+const randomToken = () => base64url(crypto.getRandomValues(new Uint8Array(32)));
+const digest = async (value) => base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(value))));
+const validToken = (value) => /^[A-Za-z0-9_-]{43}$/.test(value ?? '');
+const authCookie = (name, value, age) => name + '=' + value + '; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=' + age;
+
+function readCookie(request, name) {
+  const prefix = name + '=';
+  return request.headers.get('cookie')?.split(';').map((part) => part.trim()).find((part) => part.startsWith(prefix))?.slice(prefix.length);
+}
+
+async function googleActor(request, env) {
+  const token = readCookie(request, googleSessionCookie);
+  if (!validToken(token) || !googleReady(env, new URL(request.url))) return null;
+  const session = await q(env.DB, 'SELECT email, name FROM google_sessions WHERE token_hash=? AND expires_at>?',
+    await digest(token), nowSeconds()).first();
+  return session ? actorFor(env, session.email, session.name, 'google') : null;
+}
+
+async function googleSigningKey(kid) {
+  if (!googleKeys || Date.now() >= googleKeys.expires || !googleKeys.keys.some((key) => key.kid === kid)) {
+    const response = await fetch('https://www.googleapis.com/oauth2/v3/certs', { redirect: 'error' });
+    if (!response.ok) throw new Error('Google signing keys unavailable');
+    const { keys } = await response.json();
+    const ttl = Number(response.headers.get('cache-control')?.match(/max-age=(\d+)/)?.[1] || 60);
+    googleKeys = { keys, expires: Date.now() + Math.min(ttl, 86400) * 1000 };
+  }
+  return googleKeys.keys.find((key) => key.kid === kid && key.kty === 'RSA' && (!key.alg || key.alg === 'RS256'));
+}
+
+async function verifiedGoogleProfile(token, audience, nonce) {
+  const parts = typeof token === 'string' && token.length <= 12000 ? token.split('.') : [];
+  if (parts.length !== 3) throw new Error('Invalid ID token');
+  const [header, payload, signature] = parts;
+  const { alg, kid } = JSON.parse(decoder.decode(fromBase64url(header)));
+  if (alg !== 'RS256' || typeof kid !== 'string') throw new Error('Invalid ID token header');
+  const jwk = await googleSigningKey(kid);
+  if (!jwk) throw new Error('Unknown signing key');
+  const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+  const verified = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, fromBase64url(signature), encoder.encode(header + '.' + payload));
+  if (!verified) throw new Error('Invalid signature');
+  const claims = JSON.parse(decoder.decode(fromBase64url(payload)));
+  const { iss, aud, azp, exp, iat, sub } = claims;
+  const now = nowSeconds();
+  if (!['https://accounts.google.com', 'accounts.google.com'].includes(iss) || aud !== audience || (azp && azp !== audience)
+      || claims.nonce !== nonce || !Number.isSafeInteger(exp) || exp <= now || !Number.isSafeInteger(iat) || iat > now + 60
+      || typeof sub !== 'string' || !sub) throw new Error('Invalid ID token claims');
+  const email = typeof claims.email === 'string' ? normalizeEmail(claims.email) : '';
+  // Site access is granted by email, so use addresses Google currently controls.
+  const googleManaged = email.endsWith('@gmail.com') || (typeof claims.hd === 'string' && !!claims.hd);
+  if (!emailPattern.test(email) || email.length > 254 || claims.email_verified !== true || !googleManaged) return null;
+  const name = typeof claims.name === 'string' ? claims.name.trim().slice(0, 150) : '';
+  return { email, name };
+}
+
+async function googleAuth(request, url, env) {
+  const path = url.pathname;
+  if (path === '/auth/signout' && request.method === 'POST') {
+    if (request.headers.get('origin') !== url.origin) fail(403, 'Откройте панель и повторите действие.');
+    const token = readCookie(request, googleSessionCookie);
+    if (validToken(token)) await q(env.DB, 'DELETE FROM google_sessions WHERE token_hash=?', await digest(token)).run();
+    const target = request.headers.get('oai-authenticated-user-id') ? '/signout-with-chatgpt?return_to=%2F' : '/admin';
+    return redirect(target, [authCookie(googleSessionCookie, '', 0)]);
+  }
+  if (request.method !== 'GET' || !['/auth/google', googleReturnPath].includes(path)) fail(404, 'Раздел не найден.');
+  if (!googleReady(env, url)) return redirect('/admin?google=unavailable');
+  const redirectUri = new URL(googleReturnPath, url.origin).href;
+  if (path === '/auth/google') {
+    const state = randomToken();
+    const nonce = randomToken();
+    const verifier = randomToken();
+    const auth = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    auth.search = new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID, redirect_uri: redirectUri, response_type: 'code',
+      scope: 'openid email profile', state, nonce, code_challenge: await digest(verifier), code_challenge_method: 'S256', prompt: 'select_account' });
+    return redirect(auth.href, [authCookie(googleFlowCookie, [state, nonce, verifier].join('.'), googleFlowAge)]);
+  }
+  const clearFlow = authCookie(googleFlowCookie, '', 0);
+  const abort = (reason) => redirect('/admin?google=' + reason, [clearFlow]);
+  const [state, nonce, verifier, extra] = (readCookie(request, googleFlowCookie) || '').split('.');
+  if (extra !== undefined || ![state, nonce, verifier].every(validToken) || state !== url.searchParams.get('state')) return abort('expired');
+  if (url.searchParams.has('error')) return abort('cancelled');
+  const code = url.searchParams.get('code');
+  if (!code || code.length > 4096) return abort('expired');
+  let profile;
+  try {
+    const response = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', redirect: 'error',
+      body: new URLSearchParams({ grant_type: 'authorization_code', code, client_id: env.GOOGLE_CLIENT_ID,
+        client_secret: env.GOOGLE_CLIENT_SECRET, code_verifier: verifier, redirect_uri: redirectUri }) });
+    if (!response.ok) return abort('failed');
+    const { id_token: token } = await response.json();
+    profile = await verifiedGoogleProfile(token, env.GOOGLE_CLIENT_ID, nonce);
+  } catch {
+    return abort('failed');
+  }
+  if (!profile) return abort('email');
+  const { email, name } = profile;
+  const db = env.DB;
+  if (email !== normalizeEmail(env.OWNER_EMAIL) && !await q(db, 'SELECT 1 FROM site_admins WHERE email=? LIMIT 1', email).first()) {
+    return abort('denied');
+  }
+  const token = randomToken();
+  await q(db, 'DELETE FROM google_sessions WHERE expires_at<=?', nowSeconds()).run();
+  await q(db, 'INSERT INTO google_sessions (token_hash, email, name, expires_at) VALUES (?, ?, ?, ?)',
+    await digest(token), email, name, nowSeconds() + googleSessionAge).run();
+  return redirect('/admin', [clearFlow, authCookie(googleSessionCookie, token, googleSessionAge)]);
 }
 
 async function body(request) {
@@ -138,8 +275,10 @@ async function overview(db, user, url) {
 
 async function api(request, url, env) {
   const db = env.DB;
-  const user = actor(request, env);
-  if (url.pathname === '/api/session' && request.method === 'GET') return json({ user, ownerConfigured: !!env.OWNER_EMAIL || !!env.DEMO_MODE });
+  const user = await actor(request, env);
+  if (url.pathname === '/api/session' && request.method === 'GET') return json({
+    user, ownerConfigured: !!env.OWNER_EMAIL || !!env.DEMO_MODE, googleAvailable: googleReady(env, url),
+  });
   if (!user) fail(401, 'Войдите в панель управления.');
   const method = request.method;
   if (!['GET', 'HEAD'].includes(method)) {
@@ -232,17 +371,28 @@ function shell(assets, data = null, status = 200, state = {}) {
 }
 
 async function publicPage(request, url, env, assets) {
-  const route = url.pathname.match(/^\/([a-z0-9-]+)(?:\/(menu|go\/([a-z]+)))?\/?$/);
-  if (!route || reserved.has(route[1])) return shell(assets, null, 404, { view: 'missing' });
-  const [, slug, section, action] = route;
+  const alias = url.pathname.match(nfcPath);
+  const isAlias = !!alias || url.pathname === '/';
+  const route = isAlias ? null : url.pathname.match(/^\/([a-z0-9-]+)(?:\/(menu|go\/([a-z]+)))?\/?$/);
+  const slug = alias?.[1] || route?.[1];
+  const [, , section, action] = route || [];
+  const token = alias?.[2] || url.searchParams.get('nfc');
+  const missing = () => shell(assets, null, 404, { view: 'missing' });
+  if (slug && reserved.has(slug)) return missing();
+  if (isAlias ? !token || !/^[A-Za-z0-9_-]{1,128}$/.test(token) : !route) return missing();
   const db = env.DB;
-  const site = await findSite(db, slug);
-  if (!site) return shell(assets, null, 404, { view: 'missing' });
-  const preview = url.searchParams.get('preview') === '1';
-  const user = preview ? actor(request, env) : null;
+  const site = slug ? await findSite(db, slug) : await q(db, 'SELECT * FROM sites WHERE nfc_key=?', token).first();
+  if (!site || (isAlias && site.nfc_key !== token)) return missing();
+  const source = token === site.nfc_key ? 'nfc' : 'direct';
+  const preview = url.searchParams.get('preview') === '1' || (site.status === 'draft' && source === 'nfc');
+  const user = preview ? await actor(request, env) : null;
   const previewAllowed = user && (user.role === 'owner' || await q(db, 'SELECT 1 FROM site_admins WHERE site_id=? AND email=?', site.id, user.email).first());
-  if (site.status !== 'live' && !previewAllowed) return shell(assets, null, 404, { view: 'missing' });
-  const source = url.searchParams.get('nfc') === site.nfc_key ? 'nfc' : 'direct';
+  if (site.status !== 'live' && !previewAllowed) return missing();
+  const next = new URLSearchParams();
+  if (source === 'nfc') next.set('nfc', site.nfc_key);
+  if (previewAllowed) next.set('preview', '1');
+  const query = next.size ? '?' + next : '';
+  if (isAlias) return redirect('/' + site.slug + query);
   if (section?.startsWith('go/')) {
     const destination = Object.hasOwn(actionColumns, action) ? site[actionColumns[action]] : '';
     if (!destination) return shell(assets, null, 404, { view: 'missing' });
@@ -251,15 +401,11 @@ async function publicPage(request, url, env, assets) {
   }
   const wantsMenu = section === 'menu';
   if (!previewAllowed && request.method === 'GET') await count(db, site, wantsMenu ? 'menu' : 'visit', source);
-  const next = new URLSearchParams();
-  if (source === 'nfc') next.set('nfc', site.nfc_key);
-  if (previewAllowed) next.set('preview', '1');
-  const query = next.size ? '?' + next : '';
   const { nfc_key, ...publicSite } = site;
   const items = wantsMenu
     ? await all(db, 'SELECT id, name, category, description, price FROM items WHERE site_id=? AND available=1 ORDER BY created_at, name', site.id)
     : [];
-  return shell(assets, { view: wantsMenu ? 'menu' : 'public', site: publicSite, items, query });
+  return shell(assets, { view: wantsMenu ? 'menu' : 'public', site: publicSite, items, query, draftPreview: site.status === 'draft' });
 }
 
 export function createApp(assets) {
@@ -269,6 +415,7 @@ export function createApp(assets) {
         const url = new URL(request.url);
         const path = url.pathname;
         if (path.startsWith('/api/')) return await api(request, url, env);
+        if (['/auth/google', googleReturnPath, '/auth/signout'].includes(path)) return await googleAuth(request, url, env);
         if (!['GET', 'HEAD'].includes(request.method)) return json({ error: 'Действие недоступно.' }, 405);
         if (path.startsWith('/assets/')) {
           const file = path.slice('/assets/'.length);
@@ -280,7 +427,7 @@ export function createApp(assets) {
           } });
         }
         if (path === '/favicon.ico') return new Response(null, { status: 204 });
-        if (path === '/' || path === '/admin' || path.startsWith('/admin/')) return shell(assets);
+        if ((path === '/' && !url.searchParams.has('nfc')) || path === '/admin' || path.startsWith('/admin/')) return shell(assets);
         return await publicPage(request, url, env, assets);
       } catch (error) {
         if (!error.status) console.error(error);

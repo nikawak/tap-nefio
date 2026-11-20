@@ -10,10 +10,18 @@ const folder = new URL('../.data/', import.meta.url);
 mkdirSync(folder, { recursive: true });
 const db = new DatabaseSync(process.env.TAP_TEST_MEMORY === '1' ? ':memory:' : new URL('demo.sqlite', folder));
 db.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
-if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='sites'").get()) {
+db.exec('CREATE TABLE IF NOT EXISTS local_migrations (tag TEXT PRIMARY KEY)');
+const journal = JSON.parse(readFileSync(new URL('../drizzle/meta/_journal.json', import.meta.url), 'utf8'));
+const hasMigration = db.prepare('SELECT 1 FROM local_migrations WHERE tag=?');
+const recordMigration = db.prepare('INSERT INTO local_migrations (tag) VALUES (?)');
+for (const { tag } of journal.entries) {
+  if (hasMigration.get(tag)) continue;
   db.exec('BEGIN');
   try {
-    db.exec(readFileSync(new URL('../drizzle/0000_initial.sql', import.meta.url), 'utf8'));
+    const legacyDemo = tag === '0000_initial' &&
+      db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='sites'").get();
+    if (!legacyDemo) db.exec(readFileSync(new URL('../drizzle/' + tag + '.sql', import.meta.url), 'utf8'));
+    recordMigration.run(tag);
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');

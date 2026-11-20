@@ -204,6 +204,8 @@ td strong { font-weight: 675; }
 .nfc-banner { padding: 13px 15px; margin-bottom: 19px; display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 12px; }
 .nfc-banner strong, .nfc-banner small { display: block; }
 .nfc-banner small { color: var(--muted); margin-top: 3px; overflow-wrap: anywhere; }
+.nfc-banner small.nfc-draft-hint { margin-top: 6px; color: #58536b; }
+.nfc-draft-hint a { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; }
 .tabs { display: flex; gap: 17px; margin-bottom: 19px; border-bottom: 1px solid #e6e1ef; overflow: auto; }
 .tabs a { display: flex; align-items: center; gap: 6px; white-space: nowrap; padding: 8px 3px 11px; border-bottom: 2px solid transparent; color: var(--muted); font-size: .89rem; font-weight: 650; }
 .tabs a:hover, .tabs a.selected { color: var(--brand); }
@@ -246,12 +248,20 @@ details .form-stack { margin-top: 12px; }
 .notice-box h1 { letter-spacing: -.04em; line-height: 1.15; }
 .notice-box p { color: var(--muted); }
 .notice-box .button { justify-self: start; }
+.login-options { display: grid; gap: 9px; margin-top: 4px; }
+.login-options .button { width: 100%; min-height: 44px; }
+.login-options .google-button { background: #fff; color: #1f1f1f; border-color: #747775; gap: 10px; }
+.login-options a.google-button:hover { background: #f8f9fa; border-color: #656966; }
+.login-options small { margin: -5px 0 1px; color: var(--muted); text-align: center; }
+.login-options .button:disabled { cursor: default; opacity: .68; }
+.login-options .login-status { padding: 9px 12px; background: #f6f1ff; color: #523890; border-radius: 9px; font-size: .9rem; }
 
 .landing-body { --venue-accent: #714829; --venue-bg: #f6efe6; --venue-dark: #321e16; --venue-muted: #6f5848; --venue-white: #fffaf3; background: #f4ebe1; color: var(--venue-dark); }
 .landing-indigo { --venue-accent: #52338f; --venue-bg: #f0eafa; --venue-dark: #27183e; --venue-muted: #695a80; --venue-white: #fcf9ff; background: #e9dff6; }
 .landing-garden { --venue-accent: #365b42; --venue-bg: #eef2e8; --venue-dark: #233f2a; --venue-muted: #4f6653; --venue-white: #f9fbf6; background: #e4eade; }
 .landing-lavender { --venue-accent: #6e4d82; --venue-bg: #f3ebf4; --venue-dark: #3d2949; --venue-muted: #6f5a78; --venue-white: #fef9ff; background: #eee2ee; }
 .landing { max-width: 568px; margin: 27px auto; min-height: min(760px,calc(100vh - 54px)); background: var(--venue-white); border-radius: 26px; overflow: hidden; box-shadow: 0 24px 72px #321a201c; }
+.public-draft-banner { padding: 9px 12px; background: #fff1cd; color: #563c07; font-size: .9rem; text-align: center; font-weight: 650; }
 .public-hero { min-height: 350px; display: grid; place-items: center; position: relative; isolation: isolate; background: var(--venue-accent); color: white; overflow: hidden; text-align: center; }
 .public-hero.with-cover::after { content: ""; position: absolute; z-index: -1; inset: 0; background: linear-gradient(0deg,#241109d9,#2110096b 74%), linear-gradient(90deg,#1b090b38,#1b090b24); }
 .public-cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; }

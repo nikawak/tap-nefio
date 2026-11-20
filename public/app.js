@@ -50,6 +50,14 @@ const nextDay = (value, offset) => new Date(Date.parse(value + 'T00:00:00Z') + o
 const nfcUrl = (site) => location.origin + '/' + site.slug + '?nfc=' + encodeURIComponent(site.nfc_key);
 const signIn = '/signin-with-chatgpt?return_to=%2Fadmin';
 const signOut = '/signout-with-chatgpt?return_to=%2F';
+const googleMessages = {
+  unavailable: 'Вход через Google ожидает подключения.',
+  expired: 'Срок запроса истёк. Начните вход через Google заново.',
+  cancelled: 'Вход через Google отменён.',
+  failed: 'Не удалось войти через Google. Попробуйте ещё раз.',
+  email: 'Для входа через Google используйте Gmail или Google Workspace.',
+  denied: 'Для этого адреса пока нет доступа. Обратитесь к владельцу мини-сайта.',
+};
 const logo = (href = '/admin') => `<a class="brand" href="${href}" aria-label="Тап. Главная"><span class="brand-icon">${svg('nfc', 24)}</span><span>тап<span class="brand-dot">.</span></span></a>`;
 
 async function api(path, options = {}) {
@@ -108,6 +116,7 @@ function structure(current, content) {
           ${state.showAccount ? `<div class="account-menu">
             <p>${html(user.email)}</p>
             ${user.demo ? `<button data-action="switch-role">${svg('users', 18)} ${user.role === 'owner' ? 'Войти как администратор' : 'Войти как владелец'}</button>` :
+              user.provider === 'google' ? `<form method="post" action="/auth/signout" target="_top"><button type="submit">${svg('logout', 18)} Выйти</button></form>` :
               `<a href="${signOut}" target="_top">${svg('logout', 18)} Выйти</a>`}</div>` : ''}
         </div>
       </header>
@@ -301,7 +310,7 @@ function itemsContent(site, items) {
 }
 
 function accessContent(admins) {
-  return `<div class="panel form-panel"><h2>Администраторы сайта</h2><p>Укажите email, с которым администратор входит в ChatGPT. Он сможет редактировать меню и видеть статистику этой страницы.</p>
+  return `<div class="panel form-panel"><h2>Администраторы сайта</h2><p>Укажите email, с которым администратор будет входить. Он сможет редактировать меню и видеть статистику этой страницы.</p>
    <form id="adminForm" class="inline-form"><input name="email" type="email" required maxlength="254" placeholder="name@example.com" aria-label="Email администратора"><button class="button primary" type="submit">Добавить</button><p class="form-error" role="alert"></p></form>
    ${admins.length ? `<ul class="access-list">${admins.map(({ email }) => `<li><span>${svg('users', 18)}${html(email)}</span><button class="icon-button danger" data-action="delete-admin" data-email="${html(email)}" aria-label="Отозвать доступ">${svg('trash', 18)}</button></li>`).join('')}</ul>` : '<p class="muted">Администраторы пока не назначены.</p>'}</div>`;
 }
@@ -316,7 +325,9 @@ function detailContent(current, bundle, analytics) {
   const previewPath = '/' + site.slug + '?preview=1';
   return `<div class="page-heading detail-title"><div class="detail-title-main">${siteIcon(site)}<div><h1>${html(site.name)}</h1><p>${html(site.type)} · /${site.slug}</p></div></div>
     <div class="heading-actions">${statusBadge(site.status)}${linkButton('Предпросмотр', 'external', previewPath, 'target="_blank" rel="noopener"')}</div></div>
-    <div class="panel nfc-banner"><span class="icon-tile iris">${svg('nfc', 23)}</span><div><strong>Ссылка для NFC-метки</strong><small>${html(nfcUrl(site))}</small></div>${button('Скопировать', 'copy', 'copy-nfc', 'secondary')}</div>
+    <div class="panel nfc-banner"><span class="icon-tile iris">${svg('nfc', 23)}</span><div><strong>Ссылка для NFC-метки</strong><small>${html(nfcUrl(site))}</small>
+    ${site.status === 'draft' ? `<small class="nfc-draft-hint">Гости смогут открыть ссылку после публикации. ${owner ? `<a href="${base}/settings" data-nav>Настройки публикации</a>` : ''}</small>` : ''}</div>
+    ${button('Скопировать', 'copy-nfc', 'secondary')}</div>
     <nav class="tabs" aria-label="Разделы сайта">${tabs.map(([key, label, icon, href]) => `<a data-nav href="${href}" class="${active === key ? 'selected' : ''}" ${active === key ? 'aria-current="page"' : ''}>${svg(icon, 18)}${label}</a>`).join('')}</nav>
     ${active === 'menu' ? itemsContent(site, items) : ''}
     ${active === 'settings' ? `<section class="panel form-panel"><h2>Настройки страницы</h2><p>Оформление, контакты и публикация.</p>${siteForm(site)}</section>` : ''}
@@ -338,6 +349,7 @@ function landing(model) {
   }
   document.body.classList.add('landing-body', 'landing-' + site.theme);
   app.innerHTML = `<main class="landing">
+    ${model.draftPreview ? '<p class="public-draft-banner">Предпросмотр черновика</p>' : ''}
     <section class="public-hero ${site.cover_url ? 'with-cover' : ''}">${site.cover_url ? `<img class="public-cover" src="${html(site.cover_url)}" alt="" fetchpriority="high">` : '<div class="public-pattern" aria-hidden="true"></div>'}
       <div class="public-hero-inner">${siteIcon(site, true)}<p class="public-type">${html(site.type)}</p><h1>${html(site.name)}</h1>${site.description ? `<p class="public-description">${html(site.description)}</p>` : ''}</div>
     </section>
@@ -357,6 +369,19 @@ function landing(model) {
 
 function notice(title, description, action = '') {
   app.innerHTML = `<main class="notice"><div class="notice-box panel">${logo()}<h1>${html(title)}</h1><p>${html(description)}</p>${action}</div></main>`;
+}
+
+function loginOptions(googleAvailable) {
+  const code = new URLSearchParams(location.search).get('google');
+  const error = code && Object.hasOwn(googleMessages, code) ? googleMessages[code] : '';
+  const googleIcon = '<img src="https://developers.google.com/static/identity/images/g-logo.png" width="18" height="18" alt="">';
+  return `<div class="login-options">
+    ${error ? `<p class="login-status" role="alert">${html(error)}</p>` : ''}
+    ${googleAvailable
+      ? `<a class="button secondary google-button" href="/auth/google" target="_top">${googleIcon}Войти через Google</a>`
+      : `<button class="button secondary google-button" type="button" disabled aria-describedby="googleSetup">${googleIcon}Войти через Google</button><small id="googleSetup">Ожидает подключения</small>`}
+    <a class="button primary" href="${signIn}" target="_top">Войти через ChatGPT</a>
+  </div>`;
 }
 
 let toastTimer;
@@ -550,10 +575,9 @@ async function start() {
   if (page.site) { landing(page); return; }
   try { state.demoRole = sessionStorage.getItem('tap-demo-role'); } catch { /* storage disabled */ }
   try {
-    const { user, ownerConfigured } = await api('/api/session');
+    const { user, ownerConfigured, googleAvailable } = await api('/api/session');
     if (!user) {
-      notice('Панель управления', 'Войдите, чтобы управлять NFC-страницами и смотреть статистику.',
-        `<a class="button primary" href="${signIn}" target="_top">Войти через ChatGPT</a>`);
+      notice('Панель управления', 'Войдите, чтобы управлять NFC-страницами и смотреть статистику.', loginOptions(googleAvailable));
       return;
     }
     if (!ownerConfigured) {
