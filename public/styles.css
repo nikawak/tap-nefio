@@ -214,6 +214,12 @@ td strong { font-weight: 675; }
 .tabs a.selected { border-color: var(--brand); }
 .form-panel { max-width: 720px; padding: 20px; }
 .form-panel > .form-stack, .form-panel .inline-form { margin-top: 19px; }
+.tip-settings .tip-option-settings { border: 1px solid var(--line); padding: 11px 13px; border-radius: 10px; }
+.tip-option-settings summary { color: var(--ink); }
+.tip-option-settings summary .status { margin-left: 5px; }
+.tip-option-settings .form-stack > p { font-size: .88rem; }
+.tip-metrics { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 12px; }
+.tip-metrics .metric { min-height: 110px; }
 .form-stack { display: grid; gap: 13px; }
 .form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
 .form-stack label { display: grid; gap: 5px; color: #494358; font-size: .88rem; font-weight: 650; }
@@ -314,6 +320,23 @@ body:has(#modal[open]) { overflow: hidden; }
 .public-item-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: .95rem; color: var(--venue-muted); }
 .public-item-meta strong { color: var(--venue-accent); font-size: 1.12rem; white-space: nowrap; }
 .public-item-detail p { white-space: pre-line; overflow-wrap: anywhere; }
+.tip-page { min-height: 100dvh; display: grid; place-items: start center; padding: clamp(18px, 7vh, 60px) 12px; }
+.tip-page-card { display: grid; align-content: start; justify-items: stretch; gap: 13px; width: min(100%, 465px); padding: clamp(17px, 5vw, 30px); border-radius: 23px; background: var(--venue-white); box-shadow: 0 17px 43px #321a2016; }
+.tip-page-card > .site-icon { justify-self: center; }
+.tip-venue { color: var(--venue-muted); text-align: center; font-size: .9rem; font-weight: 650; overflow-wrap: anywhere; }
+.tip-page-card h1 { font: 550 clamp(1.85rem, 6vw, 2.5rem)/1.08 Georgia, serif; text-align: center; letter-spacing: -.03em; }
+.tip-choices, .tip-amount-form { display: grid; gap: 9px; margin-top: 4px; }
+.public-button.tip-choice > span { display: grid; gap: 3px; overflow-wrap: anywhere; }
+.tip-recipient, .tip-note { font-size: .9rem; font-weight: 450; color: var(--venue-muted); overflow-wrap: anywhere; }
+.tip-provider, .tip-receipt { font-weight: 675; text-align: center; overflow-wrap: anywhere; }
+.tip-provider .tip-recipient { display: block; }
+.tip-home { justify-self: center; color: var(--venue-accent); font-size: .91rem; text-decoration: underline; text-underline-offset: .18em; margin-top: 4px; }
+.tip-presets { display: grid; gap: 5px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.tip-presets button { padding: 6px 3px; min-height: 43px; border: 1px solid var(--venue-bg); border-radius: 9px; background: var(--venue-bg); color: var(--venue-dark); font-size: .9rem; white-space: nowrap; }
+.tip-presets button:hover { border-color: var(--venue-accent); }
+.tip-amount-form label { display: grid; gap: 4px; font-size: .92rem; font-weight: 650; }
+.tip-amount-form input[name=amount] { width: 100%; min-height: 44px; border: 1px solid var(--venue-muted); border-radius: 9px; background: var(--venue-white); padding: 8px 11px; font-size: 1rem; }
+.tip-amount-form button[type=submit] { justify-content: center; border: 0; min-height: 48px; }
 
 @media (min-width:1450px) {
   .metric { padding: 16px 19px; }

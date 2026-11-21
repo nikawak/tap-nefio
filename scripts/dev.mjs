@@ -73,7 +73,9 @@ const server = createServer(async (incoming, outgoing) => {
       headers: incoming.headers,
       ...(['GET', 'HEAD'].includes(incoming.method) ? {} : { body: Readable.toWeb(incoming), duplex: 'half' }),
     });
-    const response = await createApp(readAssets()).fetch(request, { DB: { prepare: statement }, BUCKET: bucket, DEMO_MODE: true });
+    const response = await createApp(readAssets()).fetch(request, {
+      DB: { prepare: statement }, BUCKET: bucket, DEMO_MODE: true, TIP_ENCRYPTION_KEY: process.env.TIP_ENCRYPTION_KEY,
+    });
     outgoing.writeHead(response.status, Object.fromEntries(response.headers));
     if (response.body && incoming.method !== 'HEAD') Readable.fromWeb(response.body).pipe(outgoing);
     else outgoing.end();

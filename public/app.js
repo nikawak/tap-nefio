@@ -53,6 +53,14 @@ const actionInfo = {
   menu: ['Открытия меню', 'book', 'iris'], maps: ['Переходы к отзывам', 'star', 'peach'],
   instagram: ['Instagram', 'instagram', 'pink'], telegram: ['Telegram', 'telegram', 'sky'], vk: ['ВКонтакте', 'social', 'mint'],
 };
+const tipLinks = {
+  alpha: '«нетмонет» · Альфа-Банк',
+  moneyapp: 'MoneyApp · БСБ Банк',
+  teacode: '«Чай-код» · Беларусбанк',
+  'bepaid-link': 'Платёжная ссылка bePaid',
+};
+const tipLabels = { ...tipLinks, bepaid: 'Оплата картой через bePaid' };
+const tipIcon = '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 20.5 4.6 13C.5 8.6 6.4 2.4 10.8 6.9l1.2 1.2 1.2-1.2C17.6 2.4 23.5 8.6 19.4 13Z" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const themes = { coffee: 'Кофе', indigo: 'Индиго', garden: 'Базилик', lavender: 'Лаванда' };
 const nextDay = (value, offset) => new Date(Date.parse(value + 'T00:00:00Z') + offset * 86400000).toISOString().slice(0, 10);
 const nfcUrl = (site) => location.origin + '/' + site.slug + '?nfc=' + encodeURIComponent(site.nfc_key);
@@ -238,6 +246,19 @@ function actions(data, full = false) {
   </div></article>`;
 }
 
+function tipsAnalytics({ counts, paid }) {
+  const countFor = (method, source) => counts.find((row) => row.method === method && row.source === source)?.count || 0;
+  return `<section class="site-section"><div class="section-heading"><div><h2>Чаевые</h2>
+    <p>Переходы по способам и оплаты, подтверждённые bePaid</p></div></div>
+    <div class="tip-metrics"><article class="panel metric"><div class="metric-head"><span class="icon-tile peach">${tipIcon}</span>Подтверждённые оплаты</div>
+    <strong class="metric-number">${nf.format(paid.count)}</strong></article>
+    <article class="panel metric"><div class="metric-head"><span class="icon-tile mint">${tipIcon}</span>Сумма подтверждённых чаевых</div>
+    <strong class="metric-number">${money(paid.amount, 'BYN')}</strong></article></div>
+    <div class="panel table-wrap"><table><thead><tr><th>Способ</th><th>С NFC</th><th>Другие переходы</th></tr></thead>
+    <tbody>${Object.entries(tipLabels).map(([method, label]) => `<tr><td>${html(label)}</td><td>${nf.format(countFor(method, 'nfc'))}</td><td>${nf.format(countFor(method, 'direct'))}</td></tr>`).join('')}</tbody></table></div>
+  </section>`;
+}
+
 function siteIcon(site, large = false) {
   const icon = { coffee: 'coffee', garden: 'leaf', lavender: 'spark', indigo: 'globe' }[site.theme] || 'globe';
   return site.logo_url ? `<img class="site-icon ${site.theme} ${large ? 'large' : ''}" src="${html(site.logo_url)}" alt="">` : `<span class="site-icon ${site.theme} ${large ? 'large' : ''}">${svg(icon, large ? 40 : 23)}</span>`;
@@ -275,7 +296,7 @@ function analyticsContent(data) {
   ${data.sites.length ? `<div class="panel table-wrap"><table><thead><tr><th>Мини-сайт</th><th>Статус</th><th>Все посещения</th><th>С NFC</th></tr></thead><tbody>
   ${data.sites.map((site) => `<tr><td><a class="table-site" data-nav href="/admin/sites/${site.slug}">${siteIcon(site)}<strong>${html(site.name)}</strong></a></td>
   <td>${statusBadge(site.status)}</td><td>${nf.format(site.visits)}</td><td>${nf.format(site.nfc)}</td></tr>`).join('')}
-  </tbody></table></div>` : siteCards([])}</section>`;
+  </tbody></table></div>` : siteCards([])}</section>${tipsAnalytics(data.tips)}`;
 }
 
 function sitesContent(data) {
@@ -325,12 +346,38 @@ function accessContent(admins) {
    ${admins.length ? `<ul class="access-list">${admins.map(({ email }) => `<li><span>${svg('users', 18)}${html(email)}</span><button class="icon-button danger" data-action="delete-admin" data-email="${html(email)}" aria-label="Отозвать доступ">${svg('trash', 18)}</button></li>`).join('')}</ul>` : '<p class="muted">Администраторы пока не назначены.</p>'}</div>`;
 }
 
+function tipsForm(settings) {
+  const checkout = settings.checkout;
+  return `<section class="panel form-panel"><h2>Чаевые</h2><p>Включите способы, которые хотите показать гостям, и укажите получателя для каждого.</p>
+  <form id="tipsForm" class="form-stack tip-settings">
+  ${Object.entries(tipLinks).map(([id, label]) => {
+    const item = settings.links[id] || {};
+    return `<details class="tip-option-settings" ${item.enabled ? 'open' : ''}><summary>${html(label)} ${item.enabled ? '<span class="status live">Включено</span>' : ''}</summary>
+    <div class="form-stack"><label class="check-label"><input name="${id}-enabled" type="checkbox" ${item.enabled ? 'checked' : ''}>Показывать гостям</label>
+    <label>Получатель<input name="${id}-recipient" maxlength="90" placeholder="Например, команда кофейни" value="${html(item.recipient)}"></label>
+    <label>Платёжная ссылка<input name="${id}-url" type="url" maxlength="2048" placeholder="https://…" value="${html(item.url)}"></label></div></details>`;
+  }).join('')}
+  <details class="tip-option-settings" ${checkout.enabled ? 'open' : ''}><summary>${tipLabels.bepaid} ${checkout.enabled ? '<span class="status live">Включено</span>' : ''}</summary>
+    <div class="form-stack"><p class="muted">Гость вводит сумму в BYN. Оплату принимает bePaid. Для подключения нужны данные магазина, которому разрешён приём чаевых.</p>
+    ${checkout.ready ? '' : '<p class="form-error">Ожидается настройка шифрования на сервере.</p>'}
+    <label class="check-label"><input name="checkout-enabled" type="checkbox" ${checkout.enabled ? 'checked' : ''} ${checkout.ready ? '' : 'disabled'}>Показывать гостям</label>
+    <label class="check-label"><input name="checkout-test" type="checkbox" ${checkout.test ? 'checked' : ''}>Тестовые платежи</label>
+    <label>Получатель<input name="checkout-recipient" maxlength="90" value="${html(checkout.recipient)}"></label>
+    <div class="form-grid"><label>ID магазина<input name="checkout-shop" inputmode="numeric" maxlength="16" value="${html(checkout.shop_id)}"></label>
+    <label>Секретный ключ<input name="checkout-secret" type="password" maxlength="200" autocomplete="new-password"
+      placeholder="${checkout.saved_key ? 'Ключ сохранён' : ''}"></label></div>
+    <label>Публичный RSA-ключ<textarea name="checkout-public-key" maxlength="4096" rows="4" spellcheck="false">${html(checkout.public_key)}</textarea></label>
+    </div></details>
+    <p class="form-error" role="alert"></p><div class="form-footer"><button class="button primary" type="submit">Сохранить способы</button></div>
+  </form></section>`;
+}
+
 function detailContent(current, bundle, analytics) {
-  const { site, items, admins } = bundle;
+  const { site, items, admins, tips } = bundle;
   const base = '/admin/sites/' + site.slug;
   const owner = state.user.role === 'owner';
   const tabs = [['menu', 'Меню', 'book', base], ['analytics', 'Статистика', 'bars', base + '/analytics'],
-    ...(owner ? [['settings', 'Настройки', 'settings', base + '/settings'], ['access', 'Доступ', 'users', base + '/access']] : [])];
+    ...(owner ? [['settings', 'Настройки', 'settings', base + '/settings'], ['access', 'Доступ', 'users', base + '/access'], ['tips', 'Чаевые', 'star', base + '/tips']] : [])];
   const active = tabs.some(([key]) => key === current.tab) ? current.tab : 'menu';
   const previewPath = '/' + site.slug + '?preview=1';
   return `<div class="page-heading detail-title"><div class="detail-title-main">${siteIcon(site)}<div><h1>${html(site.name)}</h1><p>${html(site.type)} · /${site.slug}</p></div></div>
@@ -342,8 +389,9 @@ function detailContent(current, bundle, analytics) {
     ${active === 'menu' ? itemsContent(site, items) : ''}
     ${active === 'settings' ? `<section class="panel form-panel"><h2>Настройки страницы</h2><p>Оформление, контакты и публикация.</p>${siteForm(site)}</section>` : ''}
     ${active === 'access' ? accessContent(admins) : ''}
+    ${active === 'tips' ? tipsForm(tips) : ''}
     ${active === 'analytics' ? `<div class="section-heading detail-heading"><div><h2>Статистика страницы</h2><p>Активность по этому заведению</p></div>${periodControl()}</div>
-      ${metrics(analytics)}<div class="chart-layout">${chart(analytics)}${actions(analytics, true)}</div>` : ''}`;
+      ${metrics(analytics)}<div class="chart-layout">${chart(analytics)}${actions(analytics, true)}</div>${tipsAnalytics(analytics.tips)}` : ''}`;
 }
 
 function landing(model) {
@@ -374,6 +422,7 @@ function landing(model) {
        : `<div class="public-actions">
         <a class="public-button main-action" href="${base + '/menu' + html(model.query)}"><span>${svg('book', 22)}${label}</span>${svg('right', 20)}</a>
         ${site.maps_url ? `<a class="public-button" href="${base + '/go/maps' + html(model.query)}"><span>${svg('map', 22)}Оставить отзыв на картах</span>${svg('external', 18)}</a>` : ''}
+        ${model.tips?.length ? `<a class="public-button" target="_top" href="${base + '/tips' + html(model.query)}"><span>${tipIcon}Оставить чаевые</span></a>` : ''}
         </div>
         ${social.length ? `<div class="public-socials">${social.map(([key, name]) => `<a href="${base + '/go/' + key + html(model.query)}">${svg(actionInfo[key][1], 18)}${name}</a>`).join('')}</div>` : ''}`}
     </div>
@@ -385,6 +434,55 @@ function landing(model) {
       if (!button) return;
       const item = model.items.find((entry) => entry.id === button.dataset.menuItem);
       if (item) publicItemDialog(item, site.currency);
+    });
+  }
+}
+
+function tipsLanding(model) {
+  const { site, view } = model;
+  const home = '/' + site.slug + (model.query || '');
+  const locationFor = (section) => '/' + site.slug + '/tips' + section + (model.query || '');
+  const recipient = (method) => `<span class="tip-recipient">Получатель · ${html(method.recipient)}</span>`;
+  let title = 'Оставить чаевые';
+  let content;
+  if (view === 'tip-options') {
+    content = `<div class="tip-choices">${model.methods.map((method) => `<a class="public-button tip-choice" href="${html(locationFor('/' + method.id))}" target="_top">
+      <span><strong>${html(method.label)}</strong>${recipient(method)}</span>${method.test ? '<small>Тест</small>' : ''}</a>`).join('')}</div>`;
+  } else if (view === 'tip-amount') {
+    content = `<p class="tip-provider">bePaid · ${recipient(model.chosen)}</p>
+    ${model.chosen.test ? '<p class="tip-note">Тестовый режим оплаты</p>' : ''}
+    <form id="tipAmountForm" class="tip-amount-form" method="post" target="_top" action="${html(locationFor('/bepaid'))}">
+      <input type="hidden" name="intent" value="${html(model.intent)}">
+      <div class="tip-presets" aria-label="Быстрый выбор суммы">${[2, 5, 10, 15].map((amount) => `<button type="button" data-amount="${amount}">${amount} BYN</button>`).join('')}</div>
+      <label>Сумма в BYN<input name="amount" inputmode="decimal" required maxlength="6" pattern="[0-9]{1,3}([.,][0-9]{1,2})?" placeholder="5,00"></label>
+      <p class="tip-note">От 1 до 300 BYN. Оплата откроется на странице bePaid.</p>
+      <button class="public-button main-action" type="submit" ${model.intent ? '' : 'disabled'}>К оплате</button>
+      ${model.intent ? '' : '<p class="tip-note">Предпросмотр формы</p>'}
+    </form>`;
+  } else if (view === 'tip-result') {
+    const receipt = model.receipt;
+    title = receipt.paid ? (receipt.test ? 'Тестовый платёж подтверждён' : 'Спасибо за чаевые!') :
+      receipt.cancelled ? 'Оплата не завершена' : 'Проверяем оплату';
+    content = `<p class="tip-receipt">${money(receipt.amount, 'BYN')} · ${html(receipt.recipient)}</p>
+      ${receipt.paid ? '' : receipt.cancelled
+        ? `<a class="public-button" href="${html(locationFor(''))}">Вернуться к способам оплаты</a>`
+        : `<p class="tip-note">Статус появится после подтверждения bePaid.</p><a class="public-button" href="${html(location.pathname)}">Обновить статус</a>`}`;
+  } else if (view === 'tip-preview') {
+    title = 'Предпросмотр чаевых';
+    content = `<p class="tip-provider">${html(model.chosen.label)}</p><p>${recipient(model.chosen)}</p>`;
+  } else {
+    title = 'Оплата не открылась';
+    content = `<p class="tip-note">${html(model.error)}</p><a class="public-button" href="${html(locationFor('/bepaid'))}">Открыть новую форму</a>`;
+  }
+  document.body.classList.add('landing-body', 'landing-' + site.theme);
+  app.innerHTML = `<main class="tip-page"><section class="tip-page-card">${siteIcon(site)}
+    <p class="tip-venue">${html(site.name)}</p><h1>${title}</h1>${content}
+    <a class="tip-home" href="${html(home)}">На страницу заведения</a></section></main>`;
+  const form = document.querySelector('#tipAmountForm');
+  if (form) {
+    form.addEventListener('click', (event) => {
+      const choice = event.target.closest('[data-amount]');
+      if (choice) form.elements.amount.value = choice.dataset.amount;
     });
   }
 }
@@ -599,7 +697,7 @@ async function onClick(event) {
 
 async function onSubmit(event) {
   const form = event.target;
-  if (!['siteForm', 'itemForm', 'adminForm', 'removeForm'].includes(form.id)) return;
+  if (!['siteForm', 'itemForm', 'adminForm', 'removeForm', 'tipsForm'].includes(form.id)) return;
   event.preventDefault();
   const submit = form.querySelector('button[type="submit"], button:not([type])');
   const error = form.querySelector('.form-error');
@@ -640,6 +738,15 @@ async function onSubmit(event) {
       await api(base + '/admins', { method: 'POST', body: data });
       toast('Доступ выдан');
     }
+    if (form.id === 'tipsForm') {
+      const links = Object.fromEntries(Object.keys(tipLinks).map((id) => [id, {
+        enabled: data[id + '-enabled'] === 'on', recipient: data[id + '-recipient'], url: data[id + '-url'],
+      }]));
+      const checkout = { enabled: data['checkout-enabled'] === 'on', test: data['checkout-test'] === 'on',
+        recipient: data['checkout-recipient'], shop_id: data['checkout-shop'], secret: data['checkout-secret'], public_key: data['checkout-public-key'] };
+      await api(base + '/tips', { method: 'PUT', body: { links, checkout } });
+      toast('Настройки чаевых сохранены');
+    }
     if (form.id === 'removeForm') {
       const id = form.dataset.item;
       const target = id ? '/items/' + id : '/admins/' + encodeURIComponent(form.dataset.email);
@@ -660,6 +767,7 @@ async function start() {
     notice('Страница недоступна', 'Проверьте адрес или уточните ссылку у заведения.');
     return;
   }
+  if (page.view?.startsWith('tip-')) { tipsLanding(page); return; }
   if (page.site) { landing(page); return; }
   try { state.demoRole = sessionStorage.getItem('tap-demo-role'); } catch { /* storage disabled */ }
   try {
