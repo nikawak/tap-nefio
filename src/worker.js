@@ -4,6 +4,10 @@ const themes = ['coffee', 'indigo', 'garden', 'lavender'];
 const reserved = new Set(['admin', 'api', 'assets', 'callback', 'signin-with-chatgpt', 'signout-with-chatgpt', 'favicon.ico']);
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const nfcPath = /^\/(?:([a-z0-9-]+)\/)?nfc=([A-Za-z0-9_-]{1,128})\/?$/;
+const photoPrefix = '/assets/menu-photos/';
+const photoKeyPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp)$/;
+const photoTypes = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+const photoLimit = 6 * 1024 * 1024;
 const googleFlowCookie = '__Host-tap-google-flow';
 const googleSessionCookie = '__Host-tap-session';
 const googleReturnPath = '/auth/google/return';
@@ -168,28 +172,43 @@ async function googleAuth(request, url, env) {
   return redirect('/admin', [clearFlow, authCookie(googleSessionCookie, token, googleSessionAge)]);
 }
 
-async function body(request) {
-  if (!request.headers.get('content-type')?.startsWith('application/json')) fail(415, 'Ожидался формат JSON.');
+async function readBodyBytes(request, limit, tooLarge) {
+  if (Number(request.headers.get('content-length')) > limit) fail(413, tooLarge);
   const reader = request.body?.getReader();
   if (!reader) fail(400, 'Укажите данные.');
-  const decoder = new TextDecoder();
   let size = 0;
-  let raw = '';
+  const chunks = [];
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > 16384) {
+    if (size > limit) {
       await reader.cancel();
-      fail(413, 'Слишком большой запрос.');
+      fail(413, tooLarge);
     }
-    raw += decoder.decode(value, { stream: true });
+    chunks.push(value);
   }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+function parseBody(raw) {
   try {
-    const data = JSON.parse(raw + decoder.decode());
+    const data = JSON.parse(raw);
     if (data && typeof data === 'object' && !Array.isArray(data)) return data;
   } catch { /* malformed JSON */ }
   fail(400, 'Не удалось прочитать данные.');
+}
+
+async function body(request) {
+  if (!request.headers.get('content-type')?.startsWith('application/json')) fail(415, 'Ожидался формат JSON.');
+  const bytes = await readBodyBytes(request, 16384, 'Слишком большой запрос.');
+  return parseBody(decoder.decode(bytes));
 }
 
 function field(data, key, limit, required = false) {
@@ -228,6 +247,114 @@ function itemFields(data) {
   const description = field(data, 'description', 300);
   if (!Number.isInteger(data.price) || data.price < 0 || data.price > 99999999 || typeof data.available !== 'boolean') fail(400, 'Укажите корректную цену.');
   return [name, category, description, data.price, Number(data.available)];
+}
+
+function photoFormat(bytes) {
+  if (bytes.length < 12) return null;
+  if ([255, 216, 255].every((byte, index) => bytes[index] === byte)) return 'jpg';
+  if ([137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => bytes[index] === byte)) return 'png';
+  const tag = (index) => String.fromCharCode(...bytes.subarray(index, index + 4));
+  if (tag(0) === 'RIFF' && tag(8) === 'WEBP' && ['VP8 ', 'VP8L', 'VP8X'].includes(tag(12))) return 'webp';
+  return null;
+}
+
+async function itemInput(request) {
+  const type = request.headers.get('content-type');
+  if (!type?.toLowerCase().startsWith('multipart/form-data;')) {
+    const data = await body(request);
+    if (data.remove_photo != null && typeof data.remove_photo !== 'boolean') fail(400, 'Проверьте настройки фотографии.');
+    return { fields: itemFields(data), removePhoto: data.remove_photo === true, photo: null };
+  }
+  const tooLarge = 'Фото для загрузки должно быть не больше 6 МБ.';
+  const raw = await readBodyBytes(request, photoLimit + 32768, tooLarge);
+  let form;
+  try {
+    form = await new Response(raw, { headers: { 'Content-Type': type } }).formData();
+  } catch {
+    fail(400, 'Не удалось прочитать фотографию.');
+  }
+  const payload = form.get('payload');
+  const photo = form.get('photo');
+  if (typeof payload !== 'string' || payload.length > 16384 || !(photo instanceof File) || !photo.size) {
+    fail(400, 'Выберите фотографию и заполните данные позиции.');
+  }
+  if (photo.size > photoLimit) fail(413, tooLarge);
+  const fields = itemFields(parseBody(payload));
+  const bytes = new Uint8Array(await photo.arrayBuffer());
+  const extension = photoFormat(bytes);
+  if (!extension) fail(415, 'Выберите фотографию в формате JPEG, PNG или WebP.');
+  return { fields, removePhoto: false, photo: { bytes, extension } };
+}
+
+function itemWithPhoto({ photo_key: key, ...item }, preview = false) {
+  const photo_url = key ? photoPrefix + key + (preview ? '?preview=1' : '') : null;
+  return { ...item, photo_url };
+}
+
+async function uploadPhoto(env, photo) {
+  if (!photo) return null;
+  if (!env.BUCKET) fail(503, 'Хранилище фотографий временно недоступно.');
+  const key = newId() + '.' + photo.extension;
+  await env.BUCKET.put(key, photo.bytes, { httpMetadata: { contentType: photoTypes[photo.extension] } });
+  return key;
+}
+
+async function removePhotoIfUnused(env, key) {
+  if (!key || !env.BUCKET) return;
+  try {
+    if (!await q(env.DB, 'SELECT 1 FROM items WHERE photo_key=?', key).first()) await env.BUCKET.delete(key);
+  } catch (error) {
+    console.error('Failed to remove unused menu photo', error);
+  }
+}
+
+async function editItem(request, env, site, id) {
+  const db = env.DB;
+  const { fields, photo, removePhoto } = await itemInput(request);
+  if (!photo && !removePhoto) {
+    const result = await q(db, 'UPDATE items SET name=?, category=?, description=?, price=?, available=? WHERE site_id=? AND id=?',
+      ...fields, site.id, id).run();
+    if (!result.meta.changes) fail(404, 'Позиция не найдена.');
+    return;
+  }
+  const current = await q(db, 'SELECT photo_key FROM items WHERE site_id=? AND id=?', site.id, id).first();
+  if (!current) fail(404, 'Позиция не найдена.');
+  const key = await uploadPhoto(env, photo);
+  try {
+    const result = await q(db, `UPDATE items SET name=?, category=?, description=?, price=?, available=?, photo_key=?
+      WHERE site_id=? AND id=? AND photo_key IS ?`, ...fields, key, site.id, id, current.photo_key).run();
+    if (!result.meta.changes) fail(409, 'Позиция изменилась. Откройте её заново.');
+  } catch (error) {
+    await removePhotoIfUnused(env, key);
+    throw error;
+  }
+  await removePhotoIfUnused(env, current.photo_key);
+}
+
+async function servePhoto(request, url, env) {
+  const key = url.pathname.slice(photoPrefix.length);
+  const format = key.match(photoKeyPattern)?.[1];
+  const notFound = () => new Response(null, { status: 404, headers: { 'Cache-Control': 'no-store' } });
+  if (!format || !env.BUCKET) return notFound();
+  const item = await q(env.DB, `SELECT s.id AS site_id, s.status, i.available FROM items i
+    JOIN sites s ON s.id=i.site_id WHERE i.photo_key=?`, key).first();
+  if (!item) return notFound();
+  const preview = url.searchParams.get('preview') === '1';
+  if (preview) {
+    const user = await actor(request, env);
+    if (!user || (user.role !== 'owner' &&
+        !await q(env.DB, 'SELECT 1 FROM site_admins WHERE site_id=? AND email=?', item.site_id, user.email).first())) return notFound();
+  } else if (item.status !== 'live' || !item.available) {
+    return notFound();
+  }
+  const head = request.method === 'HEAD';
+  const object = await (head ? env.BUCKET.head(key) : env.BUCKET.get(key));
+  if (!object) return notFound();
+  const etag = '"' + key + '"';
+  const headers = { 'Content-Type': photoTypes[format], 'Content-Length': String(object.size),
+    'Cache-Control': preview ? 'no-store' : 'no-cache', 'X-Content-Type-Options': 'nosniff', ETag: etag };
+  if (!preview && request.headers.get('if-none-match') === etag) return new Response(null, { status: 304, headers });
+  return new Response(head ? null : object.body, { headers });
 }
 
 async function allowedSite(db, user, slug) {
@@ -308,7 +435,7 @@ async function api(request, url, env) {
   if (!section && method === 'GET') {
     const items = await all(db, 'SELECT * FROM items WHERE site_id = ? ORDER BY created_at, name', site.id);
     const admins = user.role === 'owner' ? await all(db, 'SELECT email FROM site_admins WHERE site_id = ? ORDER BY email', site.id) : [];
-    return json({ site, items, admins });
+    return json({ site, items: items.map((item) => itemWithPhoto(item, true)), admins });
   }
   if (!section && method === 'PUT') {
     if (user.role !== 'owner') fail(403, 'Настройки сайта доступны владельцу.');
@@ -318,19 +445,25 @@ async function api(request, url, env) {
   }
   if (section === 'items') {
     if (!key && method === 'POST') {
-      await q(db, 'INSERT INTO items (id, site_id, name, category, description, price, available, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        newId(), site.id, ...itemFields(await body(request)), new Date().toISOString()).run();
+      const { fields, photo } = await itemInput(request);
+      const photoKey = await uploadPhoto(env, photo);
+      try {
+        await q(db, `INSERT INTO items (id, site_id, name, category, description, price, available, created_at, photo_key)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, newId(), site.id, ...fields, new Date().toISOString(), photoKey).run();
+      } catch (error) {
+        await removePhotoIfUnused(env, photoKey);
+        throw error;
+      }
       return json({ ok: true }, 201);
     }
     if (key && method === 'PUT') {
-      const result = await q(db, 'UPDATE items SET name=?, category=?, description=?, price=?, available=? WHERE site_id=? AND id=?',
-        ...itemFields(await body(request)), site.id, key).run();
-      if (!result.meta.changes) fail(404, 'Позиция не найдена.');
+      await editItem(request, env, site, key);
       return json({ ok: true });
     }
     if (key && method === 'DELETE') {
-      const result = await q(db, 'DELETE FROM items WHERE site_id=? AND id=?', site.id, key).run();
-      if (!result.meta.changes) fail(404, 'Позиция не найдена.');
+      const item = await q(db, 'DELETE FROM items WHERE site_id=? AND id=? RETURNING photo_key', site.id, key).first();
+      if (!item) fail(404, 'Позиция не найдена.');
+      await removePhotoIfUnused(env, item.photo_key);
       return json({ ok: true });
     }
   }
@@ -366,7 +499,7 @@ function shell(assets, data = null, status = 200, state = {}) {
   return new Response(html, { status, headers: {
     'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
-    'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: http: data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self' https://chatgpt.com https://*.chatgpt.com",
+    'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: http: data: blob:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self' https://chatgpt.com https://*.chatgpt.com",
   } });
 }
 
@@ -403,9 +536,10 @@ async function publicPage(request, url, env, assets) {
   if (!previewAllowed && request.method === 'GET') await count(db, site, wantsMenu ? 'menu' : 'visit', source);
   const { nfc_key, ...publicSite } = site;
   const items = wantsMenu
-    ? await all(db, 'SELECT id, name, category, description, price FROM items WHERE site_id=? AND available=1 ORDER BY created_at, name', site.id)
+    ? await all(db, 'SELECT id, name, category, description, price, photo_key FROM items WHERE site_id=? AND available=1 ORDER BY created_at, name', site.id)
     : [];
-  return shell(assets, { view: wantsMenu ? 'menu' : 'public', site: publicSite, items, query, draftPreview: site.status === 'draft' });
+  return shell(assets, { view: wantsMenu ? 'menu' : 'public', site: publicSite,
+    items: items.map((item) => itemWithPhoto(item, !!previewAllowed)), query, draftPreview: site.status === 'draft' });
 }
 
 export function createApp(assets) {
@@ -417,6 +551,7 @@ export function createApp(assets) {
         if (path.startsWith('/api/')) return await api(request, url, env);
         if (['/auth/google', googleReturnPath, '/auth/signout'].includes(path)) return await googleAuth(request, url, env);
         if (!['GET', 'HEAD'].includes(request.method)) return json({ error: 'Действие недоступно.' }, 405);
+        if (path.startsWith(photoPrefix)) return await servePhoto(request, url, env);
         if (path.startsWith('/assets/')) {
           const file = path.slice('/assets/'.length);
           const asset = Object.hasOwn(assets, file) && assets[file];

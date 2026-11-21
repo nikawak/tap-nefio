@@ -1,5 +1,13 @@
 const app = document.querySelector('#app');
 const modal = document.querySelector('#modal');
+let photoPreviewUrl;
+modal.addEventListener('click', (event) => {
+  if (event.target === modal || event.target.closest('[data-action="close-dialog"]')) modal.close();
+});
+modal.addEventListener('close', () => {
+  if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+  photoPreviewUrl = null;
+});
 const state = { data: null, user: null, days: 7, siteFilter: '', showAccount: false, mobileNav: false, details: null, pending: 0 };
 const page = JSON.parse(document.querySelector('#page-data').textContent);
 const icons = {
@@ -61,11 +69,12 @@ const googleMessages = {
 const logo = (href = '/admin') => `<a class="brand" href="${href}" aria-label="Тап. Главная"><span class="brand-icon">${svg('nfc', 24)}</span><span>тап<span class="brand-dot">.</span></span></a>`;
 
 async function api(path, options = {}) {
+  const multipart = options.body instanceof FormData;
   const result = await fetch(path, {
     method: options.method || 'GET', credentials: 'same-origin',
-    headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+    headers: { ...(options.body && !multipart ? { 'Content-Type': 'application/json' } : {}),
       ...(state.demoRole ? { 'x-demo-role': state.demoRole } : {}) },
-    body: options.body ? JSON.stringify(options.body) : undefined,
+    body: multipart ? options.body : options.body ? JSON.stringify(options.body) : undefined,
   });
   const data = await result.json();
   if (!result.ok) throw new Error(data.error || 'Не удалось загрузить данные.');
@@ -302,7 +311,8 @@ function itemsContent(site, items) {
   return `<div class="section-heading detail-heading"><div><h2>Позиции меню</h2><p>Добавляйте товары и услуги, меняйте цены и наличие.</p></div>
     ${button('Добавить позицию', 'plus', 'new-item')}</div>
     ${items.length ? `<div class="panel table-wrap"><table><thead><tr><th>Название</th><th>Категория</th><th>Цена</th><th>Наличие</th><th><span class="sr-only">Действия</span></th></tr></thead>
-      <tbody>${items.map((item) => `<tr><td><strong>${html(item.name)}</strong>${item.description ? `<small class="table-note">${html(item.description)}</small>` : ''}</td>
+      <tbody>${items.map((item) => `<tr><td><div class="table-item">${item.photo_url ? `<img src="${html(item.photo_url)}" alt="" width="42" height="42" loading="lazy" decoding="async">` : ''}
+      <div><strong>${html(item.name)}</strong>${item.description ? `<small class="table-note">${html(item.description)}</small>` : ''}</div></div></td>
       <td>${html(item.category)}</td><td>${money(item.price, site.currency)}</td><td><span class="status ${item.available ? 'live' : 'draft'}"><i></i>${item.available ? 'В меню' : 'Скрыта'}</span></td>
       <td><div class="row-actions"><button class="icon-button" data-action="edit-item" data-id="${item.id}" aria-label="Редактировать ${html(item.name)}">${svg('pencil', 18)}</button>
       <button class="icon-button danger" data-action="delete-item" data-id="${item.id}" aria-label="Удалить ${html(item.name)}">${svg('trash', 18)}</button></div></td></tr>`).join('')}</tbody></table></div>` :
@@ -356,7 +366,11 @@ function landing(model) {
     <div class="public-content">
       ${isMenu ? `<div class="public-menu-heading"><h2>${site.type === 'Студия красоты' ? 'Услуги' : 'Меню'}</h2><a href="${base + html(model.query)}">Главная страница</a></div>
       ${groups.size ? [...groups].map(([category, items]) => `<section class="public-category"><h3>${html(category)}</h3><ul>${items.map((item) =>
-        `<li><div><strong>${html(item.name)}</strong>${item.description ? `<p>${html(item.description)}</p>` : ''}</div><span>${money(item.price, site.currency)}</span></li>`).join('')}</ul></section>`).join('') : '<p>Позиции появятся здесь позже.</p>'}`
+        `<li><button class="public-item" type="button" data-menu-item="${html(item.id)}" aria-haspopup="dialog">
+          ${item.photo_url ? `<img class="public-item-thumb" src="${html(item.photo_url)}" alt="" width="58" height="58" loading="lazy" decoding="async">` : ''}
+          <span class="public-item-copy"><strong>${html(item.name)}</strong>${item.description ? `<span class="public-item-summary">${html(item.description)}</span>` : ''}</span>
+          <span class="public-item-price">${money(item.price, site.currency)}</span>
+        </button></li>`).join('')}</ul></section>`).join('') : '<p>Позиции появятся здесь позже.</p>'}`
        : `<div class="public-actions">
         <a class="public-button main-action" href="${base + '/menu' + html(model.query)}"><span>${svg('book', 22)}${label}</span>${svg('right', 20)}</a>
         ${site.maps_url ? `<a class="public-button" href="${base + '/go/maps' + html(model.query)}"><span>${svg('map', 22)}Оставить отзыв на картах</span>${svg('external', 18)}</a>` : ''}
@@ -365,6 +379,22 @@ function landing(model) {
     </div>
     <footer class="public-footer">${svg('nfc', 18)} Сделано в Тап.</footer>
   </main>`;
+  if (isMenu) {
+    app.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-menu-item]');
+      if (!button) return;
+      const item = model.items.find((entry) => entry.id === button.dataset.menuItem);
+      if (item) publicItemDialog(item, site.currency);
+    });
+  }
+}
+
+function publicItemDialog(item, currency) {
+  showModal(item.name, `${item.photo_url ? `<img class="public-item-photo" src="${html(item.photo_url)}" alt="${html(item.name)}">` : ''}
+    <div class="public-item-detail">
+      <div class="public-item-meta"><span>${html(item.category)}</span><strong>${money(item.price, currency)}</strong></div>
+      ${item.description ? `<p>${html(item.description)}</p>` : ''}
+    </div>`, 'public-item-dialog');
 }
 
 function notice(title, description, action = '') {
@@ -393,7 +423,8 @@ function toast(message) {
   toastTimer = setTimeout(() => element.classList.remove('visible'), 3200);
 }
 
-function showModal(title, content) {
+function showModal(title, content, className = '') {
+  modal.className = className;
   modal.innerHTML = `<div class="modal-view"><div class="modal-header"><h2 id="modalTitle">${html(title)}</h2>
     <button class="icon-button" data-action="close-dialog" aria-label="Закрыть">${svg('close')}</button></div>${content}</div>`;
   modal.setAttribute('aria-labelledby', 'modalTitle');
@@ -406,8 +437,57 @@ function itemDialog(item = {}) {
   <div class="form-grid"><label>Категория<input name="category" required maxlength="55" value="${html(item.category)}" placeholder="Кофе"></label>
   <label>Цена, ${html(state.details.site.currency)}<input name="price" required inputmode="decimal" type="number" min="0" max="999999.99" step="0.01" value="${item.price == null ? '' : item.price / 100}" placeholder="0,00"></label></div>
   <label>Описание<textarea name="description" rows="3" maxlength="300">${html(item.description)}</textarea></label>
+  <div class="photo-edit">
+    <img class="photo-edit-preview" data-saved-photo="${html(item.photo_url)}" alt="Предпросмотр фото"
+      ${item.photo_url ? `src="${html(item.photo_url)}"` : 'hidden'}>
+    <div class="photo-edit-input"><label>${item.photo_url ? 'Заменить фото' : 'Добавить фото'}
+      <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" aria-describedby="photoHint">
+      <small id="photoHint">JPEG, PNG или WebP до 20 МБ.</small>
+    </label>
+    ${item.photo_url ? '<label class="check-label"><input name="remove_photo" type="checkbox">Удалить фото</label>' : ''}</div>
+  </div>
   <label class="check-label"><input name="available" type="checkbox" ${item.available !== 0 ? 'checked' : ''}>Показывать в публичном меню</label>
   <p class="form-error" role="alert"></p><div class="form-footer">${button('Отмена', '', 'close-dialog', 'secondary')}<button class="button primary">Сохранить</button></div></form>`);
+}
+
+function updatePhotoPreview(input) {
+  const form = input.form;
+  const photoInput = form.elements.photo;
+  const remove = form.elements.remove_photo;
+  if (input === photoInput && photoInput.files.length && remove) remove.checked = false;
+  if (input === remove && remove.checked) photoInput.value = '';
+  const image = form.querySelector('.photo-edit-preview');
+  if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+  photoPreviewUrl = photoInput.files.length ? URL.createObjectURL(photoInput.files[0]) : null;
+  const source = photoPreviewUrl || (remove?.checked ? '' : image.dataset.savedPhoto);
+  image.hidden = !source;
+  if (source) image.src = source;
+  else image.removeAttribute('src');
+}
+
+async function scaledPhoto(file) {
+  if (!file.size || file.size > 20 * 1024 * 1024) throw new Error('Выберите фото размером до 20 МБ.');
+  if (file.type && !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    throw new Error('Выберите фотографию в формате JPEG, PNG или WebP.');
+  }
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    throw new Error('Не удалось открыть фотографию. Выберите другой файл.');
+  }
+  const canvas = document.createElement('canvas');
+  const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  try {
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  } finally {
+    bitmap.close();
+  }
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', .84));
+  if (!blob) throw new Error('Не удалось подготовить фотографию.');
+  return blob;
 }
 
 function confirmDialog(title, text, attribute, value, label) {
@@ -501,7 +581,6 @@ async function onClick(event) {
     navigate('/admin');
   }
   if (action === 'new-site') showModal('Создать мини-сайт', siteForm());
-  if (action === 'close-dialog') modal.close();
   if (action === 'new-item') itemDialog();
   if (action === 'edit-item') {
     const item = state.details.items.find((entry) => entry.id === trigger.dataset.id);
@@ -544,7 +623,16 @@ async function onSubmit(event) {
     if (form.id === 'itemForm') {
       const id = form.dataset.id;
       const price = Math.round(Number(data.price) * 100);
-      await api(base + '/items' + (id ? '/' + id : ''), { method: id ? 'PUT' : 'POST', body: { ...data, price, available: form.elements.available.checked } });
+      const { photo, ...fields } = data;
+      const payload = { ...fields, price, available: form.elements.available.checked,
+        remove_photo: form.elements.remove_photo?.checked === true };
+      let body = payload;
+      if (photo?.name) {
+        body = new FormData();
+        body.set('payload', JSON.stringify(payload));
+        body.set('photo', await scaledPhoto(photo), 'menu-photo');
+      }
+      await api(base + '/items' + (id ? '/' + id : ''), { method: id ? 'PUT' : 'POST', body });
       modal.close();
       toast('Позиция сохранена');
     }
@@ -588,8 +676,10 @@ async function start() {
     document.addEventListener('click', onClick);
     document.addEventListener('submit', onSubmit);
     document.addEventListener('change', (event) => {
-      if (event.target.id === 'period') { state.days = Number(event.target.value); load(); }
-      if (event.target.id === 'siteFilter') { state.siteFilter = event.target.value; load(); }
+      const input = event.target;
+      if (input.id === 'period') { state.days = Number(input.value); load(); }
+      if (input.id === 'siteFilter') { state.siteFilter = input.value; load(); }
+      if (input.form?.id === 'itemForm' && ['photo', 'remove_photo'].includes(input.name)) updatePhotoPreview(input);
     });
     document.addEventListener('input', (event) => {
       if (event.target.id !== 'siteSearch') return;
