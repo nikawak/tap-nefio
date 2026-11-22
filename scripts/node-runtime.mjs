@@ -36,15 +36,32 @@ export function openDatabase(path, { legacyDemo = false } = {}) {
 }
 
 export function databaseBinding(db) {
+  const writes = new WeakMap();
   function statement(sql, params = []) {
-    return {
+    const run = () => ({ meta: db.prepare(sql).run(...params) });
+    const bound = {
       bind: (...bound) => statement(sql, bound),
       all: async () => ({ results: db.prepare(sql).all(...params) }),
       first: async () => db.prepare(sql).get(...params) ?? null,
-      run: async () => ({ meta: db.prepare(sql).run(...params) }),
+      run: async () => run(),
     };
+    writes.set(bound, run);
+    return bound;
   }
-  return { prepare: statement };
+  return {
+    prepare: statement,
+    async batch(statements) {
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const results = statements.map((statement) => writes.get(statement)());
+        db.exec('COMMIT');
+        return results;
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
+    },
+  };
 }
 
 export function photoBucket(folder) {

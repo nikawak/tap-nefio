@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
@@ -30,12 +31,17 @@ function fixture(t, hooks = {}) {
   });
   const app = createApp(readAssets());
   const env = { DB: { prepare }, OWNER_EMAIL: 'owner@example.test' };
+  const sessions = new Map();
+  for (const email of [env.OWNER_EMAIL, manager.email]) {
+    const token = randomBytes(32).toString('base64url');
+    const hash = createHash('sha256').update(token).digest('base64url');
+    db.prepare('INSERT INTO google_sessions (token_hash,email,name,expires_at) VALUES (?, ?, ?, ?)')
+      .run(hash, email, '', Math.floor(Date.now() / 1000) + 600);
+    sessions.set(email, token);
+  }
   function request(path, { email, method = 'GET', body, ctx } = {}) {
     const headers = { origin, ...(body && { 'content-type': 'application/json' }) };
-    if (email) {
-      headers['oai-authenticated-user-id'] = email;
-      headers['oai-authenticated-user-email'] = email;
-    }
+    if (email) headers.cookie = '__Host-tap-session=' + sessions.get(email);
     return app.fetch(new Request(origin + path, { headers, method, body: body && JSON.stringify(body) }), env, ctx);
   }
   return { db, request };
@@ -59,7 +65,7 @@ test('guest pages and redirects survive an analytics write failure', async (t) =
   assert.match((await request('/moka-coffee/go/maps', { ctx })).headers.get('location'), /google\.com\/maps/);
   assert.equal((await request('/moka-coffee/tips', { ctx })).headers.get('location'), tipsUrl);
   await Promise.all(tasks);
-  assert.equal(log.mock.callCount(), 4);
+  assert.equal(log.mock.calls.filter(({ arguments: [message] }) => message === 'Could not record analytics').length, 4);
 });
 
 test('a delayed counter is registered without holding up the menu', { timeout: 2500 }, async (t) => {

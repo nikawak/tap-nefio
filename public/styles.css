@@ -311,7 +311,12 @@ details .form-stack { margin-top: 12px; }
 .inline-form .form-error { grid-column: 1 / -1; }
 .access-list { margin: 12px 0 0; padding: 0; list-style: none; }
 .access-list li { display: flex; gap: 8px; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line); }
-.access-list li span { display: flex; align-items: center; gap: 8px; overflow-wrap: anywhere; min-width: 0; }
+.admin-identity { display: flex; align-items: center; gap: 8px; overflow-wrap: anywhere; min-width: 0; }
+.admin-identity > svg { flex: none; }
+.admin-identity small { display: block; color: var(--muted); }
+.access-list + .button, .form-panel p.muted + .button { margin-top: 14px; }
+.phone-control { display: flex; align-items: center; gap: 8px; }
+.phone-control > span { flex: none; color: var(--muted); }
 
 #modal { width: min(570px,calc(100% - 26px)); max-height: calc(100dvh - 36px); border: 1px solid var(--line); padding: 0; border-radius: 17px; color: var(--ink); box-shadow: 0 24px 65px #251d484a; }
 #modal::backdrop { background: #1c163865; }
@@ -333,6 +338,8 @@ body:has(#modal[open], .theme-catalogue[open]) { overflow: hidden; }
 .login-options small { margin: -5px 0 1px; color: var(--muted); text-align: center; }
 .login-options .button:disabled { cursor: default; opacity: .68; }
 .login-options .login-status { padding: 9px 12px; background: #f6f1ff; color: #523890; border-radius: 9px; font-size: .9rem; }
+.login-options form[hidden] { display: none; }
+.login-options .phone-status { font-size: .88rem; }
 
 .landing-body {
   --heading-serif: Georgia, "Times New Roman", serif;

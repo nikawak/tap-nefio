@@ -12,6 +12,7 @@
     { "idx": 7, "version": "6", "when": 1795219207000, "tag": "0007_optional_buttons", "breakpoints": true },
     { "idx": 8, "version": "6", "when": 1795219208000, "tag": "0008_feedback_and_guest_info", "breakpoints": true },
     { "idx": 9, "version": "6", "when": 1795219209000, "tag": "0009_hidden_links", "breakpoints": true },
-    { "idx": 10, "version": "6", "when": 1795219210000, "tag": "0010_guest_visibility", "breakpoints": true }
+    { "idx": 10, "version": "6", "when": 1795219210000, "tag": "0010_guest_visibility", "breakpoints": true },
+    { "idx": 11, "version": "6", "when": 1795219211000, "tag": "0011_admin_sign_in", "breakpoints": true }
   ]
 }

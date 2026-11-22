@@ -4,7 +4,10 @@ import { createApp } from '../src/worker.js';
 import { readAssets } from './assets.mjs';
 import { databaseBinding, nodeServer, openDatabase, photoBucket } from './node-runtime.mjs';
 
-const { TAP_PUBLIC_ORIGIN, TAP_DATA_DIR, OWNER_EMAIL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TIP_ENCRYPTION_KEY } = process.env;
+const {
+  TAP_PUBLIC_ORIGIN, TAP_DATA_DIR, OWNER_EMAIL, OWNER_PHONE, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TIP_ENCRYPTION_KEY,
+  TELEGRAM_CLIENT_ID, TELEGRAM_CLIENT_SECRET, PHONE_CODE_SECRET, MESSAGGIO_LOGIN, MESSAGGIO_SMS_SENDER, MESSAGGIO_VIBER_SENDER,
+} = process.env;
 if (!TAP_PUBLIC_ORIGIN?.trim() || !TAP_DATA_DIR?.trim()) {
   throw new Error('Set TAP_PUBLIC_ORIGIN and TAP_DATA_DIR.');
 }
@@ -24,7 +27,8 @@ const db = openDatabase(resolve(folder, 'tap.sqlite'));
 db.exec('PRAGMA journal_mode=WAL;');
 const env = {
   DB: databaseBinding(db), BUCKET: photoBucket(photos), SELF_HOSTED: true,
-  OWNER_EMAIL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TIP_ENCRYPTION_KEY,
+  OWNER_EMAIL, OWNER_PHONE, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TIP_ENCRYPTION_KEY,
+  TELEGRAM_CLIENT_ID, TELEGRAM_CLIENT_SECRET, PHONE_CODE_SECRET, MESSAGGIO_LOGIN, MESSAGGIO_SMS_SENDER, MESSAGGIO_VIBER_SENDER,
 };
 const app = createApp(readAssets());
 const port = Number(process.env.PORT || 4173);

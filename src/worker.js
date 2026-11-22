@@ -6,7 +6,7 @@ const themes = [
   'sage', 'mint', 'pine', 'ocean', 'sky', 'steel', 'graphite', 'berry', 'plum', 'rose',
   'coral', 'honey', 'lemon', 'clay', 'copper',
 ];
-const reserved = new Set(['admin', 'api', 'assets', 'callback', 'signin-with-chatgpt', 'signout-with-chatgpt', 'favicon.ico']);
+const reserved = new Set(['admin', 'api', 'assets', 'auth', 'callback', 'signin-with-chatgpt', 'signout-with-chatgpt', 'favicon.ico']);
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const nfcPath = /^\/(?:([a-z0-9-]+)\/)?nfc=([A-Za-z0-9_-]{1,128})\/?$/;
 const photoPrefix = '/assets/menu-photos/';
@@ -29,18 +29,32 @@ const checkoutOrigin = 'https://checkout.bepaid.by';
 const checkoutEndpoint = checkoutOrigin + '/ctp/api/checkouts';
 const tipIntentLifetime = 900;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const googleFlowCookie = '__Host-tap-google-flow';
-const googleSessionCookie = '__Host-tap-session';
-const googleReturnPath = '/auth/google/return';
-const googleFlowAge = 600;
-const googleSessionAge = 8 * 3600;
+const sessionCookie = '__Host-tap-session';
+const flowAge = 600;
+const sessionAge = 8 * 3600;
+const codeAge = 300;
+const codeRetry = 60;
+const codeAttemptLimit = 5;
+const oidcProviders = {
+  google: {
+    authorization: 'https://accounts.google.com/o/oauth2/v2/auth', token: 'https://oauth2.googleapis.com/token',
+    keys: 'https://www.googleapis.com/oauth2/v3/certs', issuers: ['https://accounts.google.com', 'accounts.google.com'],
+    scope: 'openid email profile', clientId: 'GOOGLE_CLIENT_ID', secret: 'GOOGLE_CLIENT_SECRET',
+  },
+  telegram: {
+    authorization: 'https://oauth.telegram.org/auth', token: 'https://oauth.telegram.org/token',
+    keys: 'https://oauth.telegram.org/.well-known/jwks.json', issuers: ['https://oauth.telegram.org'],
+    scope: 'openid profile phone', clientId: 'TELEGRAM_CLIENT_ID', secret: 'TELEGRAM_CLIENT_SECRET',
+  },
+};
+const messageSenders = { sms: 'MESSAGGIO_SMS_SENDER', viber: 'MESSAGGIO_VIBER_SENDER' };
 const googleProviderErrors = new Set(['invalid_client', 'invalid_grant', 'invalid_request', 'redirect_uri_mismatch',
   'unauthorized_client', 'unsupported_grant_type', 'invalid_scope', 'access_denied', 'server_error', 'temporarily_unavailable']);
 const googleTokenFailures = new Set(['keys_network', 'keys_http', 'keys_response', 'unknown_signing_key',
   'invalid_id_token', 'invalid_id_token_header', 'invalid_signature', 'invalid_claims']);
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-let googleKeys;
+const signingKeys = new Map();
 const dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Minsk', year: 'numeric', month: '2-digit', day: '2-digit' });
 const dayKey = (date = new Date()) => dayFmt.format(date);
 const todayOffset = (days) => new Date(Date.parse(dayKey() + 'T00:00:00Z') + days * 86400000).toISOString().slice(0, 10);
@@ -57,7 +71,11 @@ function redirect(url, cookies = []) {
 const findSite = (db, slug) => q(db, 'SELECT * FROM sites WHERE slug = ?', slug).first();
 const normalizeEmail = (value) => String(value ?? '').trim().toLowerCase();
 
-const googleReady = (env, url) => !!(env.GOOGLE_CLIENT_ID?.trim() && env.GOOGLE_CLIENT_SECRET?.trim() && url.protocol === 'https:');
+const oidcReady = (provider, env, url) => !!(url.protocol === 'https:' && env[provider.clientId]?.trim() && env[provider.secret]?.trim());
+const googleReady = (env, url) => oidcReady(oidcProviders.google, env, url);
+const messagesReady = (channel, env, url) => !!(url.protocol === 'https:' && validToken(env.PHONE_CODE_SECRET)
+  && env.MESSAGGIO_LOGIN?.trim() && Object.hasOwn(messageSenders, channel) && env[messageSenders[channel]]?.trim());
+const belarusPhone = (value) => typeof value === 'string' && /^\+375[0-9]{9}$/.test(value) ? value : '';
 function googleNetworkReason(error) {
   if (error?.name === 'TimeoutError' || error?.name === 'AbortError') return 'timeout';
   const message = String(error?.message ?? '');
@@ -76,9 +94,18 @@ function siteAssignment(db, email) {
   return q(db, 'SELECT 1 FROM site_admins WHERE email=? LIMIT 1', email).first();
 }
 
-async function googleRole(env, email) {
-  if (email === normalizeEmail(env.OWNER_EMAIL)) return env.SELF_HOSTED ? 'owner' : null;
+async function accountRole(env, email) {
+  if (email && email === normalizeEmail(env.OWNER_EMAIL)) return 'owner';
   return await siteAssignment(env.DB, email) ? 'manager' : null;
+}
+
+async function accountForPhone(env, phone) {
+  if (!belarusPhone(phone)) return null;
+  const owner = normalizeEmail(env.OWNER_EMAIL);
+  const assigned = await q(env.DB, `SELECT p.email, p.first_name || ' ' || p.last_name AS name FROM admin_profiles p
+    WHERE p.phone=? AND EXISTS (SELECT 1 FROM site_admins a WHERE a.email=p.email)`, phone).first();
+  if (!assigned && owner && phone === belarusPhone(env.OWNER_PHONE)) return { email: owner, name: 'Владелец' };
+  return assigned;
 }
 
 async function actor(request, env) {
@@ -86,20 +113,15 @@ async function actor(request, env) {
     if (request.headers.get('x-demo-role') === 'manager') return { role: 'manager', name: 'Анна', email: 'manager@demo.tap', demo: true };
     return { role: 'owner', name: 'Владелец', email: 'owner@demo.tap', demo: true };
   }
-  const googleUser = await googleActor(request, env);
-  if (googleUser) return googleUser;
-  if (env.SELF_HOSTED) return null;
-  if (!request.headers.get('oai-authenticated-user-id')) return null;
-  const email = normalizeEmail(request.headers.get('oai-authenticated-user-email'));
-  if (!email) return null;
-  const isOwner = email === normalizeEmail(env.OWNER_EMAIL);
-  if (!isOwner && !await siteAssignment(env.DB, email)) return null;
-  const rawName = request.headers.get('oai-authenticated-user-full-name');
-  let name = rawName || email.split('@')[0];
-  if (rawName && request.headers.get('oai-authenticated-user-full-name-encoding') === 'percent-encoded-utf-8') {
-    try { name = decodeURIComponent(rawName); } catch { name = email.split('@')[0]; }
-  }
-  return actorFor(email, name, 'chatgpt', isOwner ? 'owner' : 'manager');
+  const token = readCookie(request, sessionCookie);
+  if (!validToken(token) || new URL(request.url).protocol !== 'https:') return null;
+  const session = await q(env.DB, "SELECT s.email, COALESCE(p.first_name || ' ' || p.last_name, s.name) AS name, s.provider, s.phone " +
+    'FROM google_sessions s LEFT JOIN admin_profiles p ON p.email=s.email WHERE s.token_hash=? AND s.expires_at>?',
+    await digest(token), nowSeconds()).first();
+  if (!session) return null;
+  if (session.phone && (await accountForPhone(env, session.phone))?.email !== session.email) return null;
+  const role = await accountRole(env, session.email);
+  return role ? actorFor(session.email, session.name, session.provider, role) : null;
 }
 
 function base64url(bytes) {
@@ -120,43 +142,64 @@ function readCookie(request, name) {
   return request.headers.get('cookie')?.split(';').map((part) => part.trim()).find((part) => part.startsWith(prefix))?.slice(prefix.length);
 }
 
-async function googleActor(request, env) {
-  const token = readCookie(request, googleSessionCookie);
-  if (!validToken(token) || !googleReady(env, new URL(request.url))) return null;
-  const session = await q(env.DB, 'SELECT email, name FROM google_sessions WHERE token_hash=? AND expires_at>?',
-    await digest(token), nowSeconds()).first();
-  if (!session) return null;
-  const role = await googleRole(env, session.email);
-  return role ? actorFor(session.email, session.name, 'google', role) : null;
+function sameOrigin(request, url) {
+  const origin = request.headers.get('origin');
+  if (origin === url.origin) return;
+  if ((!origin || origin === 'null') && request.headers.get('sec-fetch-site') === 'same-origin') return;
+  fail(403, 'Откройте панель и повторите действие.');
 }
 
-async function revokeGoogleSession(request, db) {
-  const token = readCookie(request, googleSessionCookie);
+async function revokeSession(request, db) {
+  const token = readCookie(request, sessionCookie);
   if (validToken(token)) await q(db, 'DELETE FROM google_sessions WHERE token_hash=?', await digest(token)).run();
 }
 
-async function googleSigningKey(kid) {
-  if (!googleKeys || Date.now() >= googleKeys.expires || !googleKeys.keys.some((key) => key.kid === kid)) {
-    const response = await fetch('https://www.googleapis.com/oauth2/v3/certs', {
+async function createSession(request, env, profile, provider, phone = '') {
+  await revokeSession(request, env.DB);
+  const token = randomToken();
+  const now = nowSeconds();
+  await q(env.DB, 'DELETE FROM google_sessions WHERE expires_at<=?', now).run();
+  await q(env.DB, 'INSERT INTO google_sessions (token_hash, email, name, expires_at, provider, phone) VALUES (?, ?, ?, ?, ?, ?)',
+    await digest(token), profile.email, profile.name, now + sessionAge, provider, phone).run();
+  return authCookie(sessionCookie, token, sessionAge);
+}
+
+const flowCookieName = (provider) => '__Host-tap-' + provider + '-flow';
+
+async function signOut(request, url, env) {
+  if (request.method !== 'POST') fail(405, 'Действие недоступно.');
+  sameOrigin(request, url);
+  await revokeSession(request, env.DB);
+  const cookies = [sessionCookie, ...Object.keys(oidcProviders).map(flowCookieName)].map((name) => authCookie(name, '', 0));
+  if (!request.headers.get('content-type')?.startsWith('application/json')) return redirect('/admin', cookies);
+  const response = json({ ok: true });
+  for (const cookie of cookies) response.headers.append('Set-Cookie', cookie);
+  return response;
+}
+
+async function signingKey(provider, kid) {
+  let cache = signingKeys.get(provider.keys);
+  if (!cache || Date.now() >= cache.expires || !cache.keys.some((key) => key.kid === kid)) {
+    const response = await fetch(provider.keys, {
       redirect: 'manual', signal: AbortSignal.timeout(10000),
     }).catch(() => { throw new Error('keys_network'); });
     if (!response.ok) throw new Error('keys_http');
     const payload = await response.json().catch(() => null);
     if (!Array.isArray(payload?.keys)) throw new Error('keys_response');
-    const keys = payload.keys;
     const ttl = Number(response.headers.get('cache-control')?.match(/max-age=(\d+)/)?.[1] || 60);
-    googleKeys = { keys, expires: Date.now() + Math.min(ttl, 86400) * 1000 };
+    cache = { keys: payload.keys, expires: Date.now() + Math.min(ttl, 86400) * 1000 };
+    signingKeys.set(provider.keys, cache);
   }
-  return googleKeys.keys.find((key) => key.kid === kid && key.kty === 'RSA' && (!key.alg || key.alg === 'RS256'));
+  return cache.keys.find((key) => key.kid === kid && key.kty === 'RSA' && (!key.alg || key.alg === 'RS256'));
 }
 
-async function verifiedGoogleProfile(token, audience, nonce) {
+async function verifiedClaims(provider, token, audience, nonce, requireNonce) {
   const parts = typeof token === 'string' && token.length <= 12000 ? token.split('.') : [];
   if (parts.length !== 3) throw new Error('invalid_id_token');
   const [header, payload, signature] = parts;
   const { alg, kid } = JSON.parse(decoder.decode(fromBase64url(header)));
   if (alg !== 'RS256' || typeof kid !== 'string') throw new Error('invalid_id_token_header');
-  const jwk = await googleSigningKey(kid);
+  const jwk = await signingKey(provider, kid);
   if (!jwk) throw new Error('unknown_signing_key');
   const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
   const verified = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, fromBase64url(signature), encoder.encode(header + '.' + payload));
@@ -164,85 +207,167 @@ async function verifiedGoogleProfile(token, audience, nonce) {
   const claims = JSON.parse(decoder.decode(fromBase64url(payload)));
   const { iss, aud, azp, exp, iat, sub } = claims;
   const now = nowSeconds();
-  if (!['https://accounts.google.com', 'accounts.google.com'].includes(iss) || aud !== audience || (azp && azp !== audience)
-      || claims.nonce !== nonce || !Number.isSafeInteger(exp) || exp <= now || !Number.isSafeInteger(iat) || iat > now + 60
+  const validAudience = aud === audience || (Array.isArray(aud) && aud.length === 1 && aud[0] === audience);
+  if (!provider.issuers.includes(iss) || !validAudience || (azp && azp !== audience)
+      || ((requireNonce || claims.nonce !== undefined) && claims.nonce !== nonce)
+      || !Number.isSafeInteger(exp) || exp <= now || !Number.isSafeInteger(iat) || iat > now + 60 || iat < now - flowAge
       || typeof sub !== 'string' || !sub) throw new Error('invalid_claims');
+  return claims;
+}
+
+function googleProfile(claims) {
   const email = typeof claims.email === 'string' ? normalizeEmail(claims.email) : '';
-  // Site access is granted by email, so use addresses Google currently controls.
   const googleManaged = email.endsWith('@gmail.com') || (typeof claims.hd === 'string' && !!claims.hd);
   if (!emailPattern.test(email) || email.length > 254 || claims.email_verified !== true || !googleManaged) return null;
   const name = typeof claims.name === 'string' ? claims.name.trim().slice(0, 150) : '';
   return { email, name };
 }
 
-async function googleAuth(request, url, env) {
-  const path = url.pathname;
-  const clearSession = authCookie(googleSessionCookie, '', 0);
-  if (path === '/auth/signout' && request.method === 'POST') {
-    if (request.headers.get('origin') !== url.origin) fail(403, 'Откройте панель и повторите действие.');
-    await revokeGoogleSession(request, env.DB);
-    const target = !env.SELF_HOSTED && request.headers.get('oai-authenticated-user-id')
-      ? '/signout-with-chatgpt?return_to=%2F' : '/admin';
-    return redirect(target, [clearSession]);
-  }
-  if (request.method !== 'GET' || !['/auth/google', googleReturnPath].includes(path)) fail(404, 'Раздел не найден.');
-  if (!googleReady(env, url)) return redirect('/admin?google=unavailable');
-  const clientId = env.GOOGLE_CLIENT_ID.trim();
-  const redirectUri = new URL(googleReturnPath, url.origin).href;
-  if (path === '/auth/google') {
+async function oidcAuth(request, url, env, id) {
+  if (request.method !== 'GET') fail(405, 'Действие недоступно.');
+  const provider = oidcProviders[id];
+  const isGoogle = id === 'google';
+  const flowCookie = flowCookieName(id);
+  const returnPath = '/auth/' + id + '/return';
+  const redirectUri = new URL(returnPath, url.origin).href;
+  const abort = (reason) => redirect('/admin?' + id + '=' + reason, [authCookie(flowCookie, '', 0)]);
+  if (!oidcReady(provider, env, url)) return abort('unavailable');
+  const clientId = env[provider.clientId].trim();
+  const clientSecret = env[provider.secret].trim();
+
+  if (url.pathname !== returnPath) {
     const state = randomToken();
     const nonce = randomToken();
     const verifier = randomToken();
-    const auth = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    auth.search = new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri, response_type: 'code',
-      scope: 'openid email profile', state, nonce, code_challenge: await digest(verifier), code_challenge_method: 'S256', prompt: 'select_account' });
-    return redirect(auth.href, [authCookie(googleFlowCookie, [state, nonce, verifier].join('.'), googleFlowAge)]);
+    const auth = new URL(provider.authorization);
+    const params = new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri, response_type: 'code',
+      scope: provider.scope, state, code_challenge: await digest(verifier), code_challenge_method: 'S256' });
+    if (isGoogle) params.set('prompt', 'select_account');
+    params.set('nonce', nonce);
+    auth.search = params;
+    return redirect(auth.href, [authCookie(flowCookie, [state, nonce, verifier].join('.'), flowAge)]);
   }
-  const clearFlow = authCookie(googleFlowCookie, '', 0);
-  const abort = (reason, cookies = []) => redirect('/admin?google=' + reason, [clearFlow, ...cookies]);
-  const [state, nonce, verifier, extra] = (readCookie(request, googleFlowCookie) || '').split('.');
+
+  const [state, nonce, verifier, extra] = (readCookie(request, flowCookie) || '').split('.');
   if (extra !== undefined || ![state, nonce, verifier].every(validToken) || state !== url.searchParams.get('state')) return abort('expired');
   if (url.searchParams.has('error')) return abort('cancelled');
   const code = url.searchParams.get('code');
   if (!code || code.length > 4096) return abort('expired');
+  const body = new URLSearchParams({ grant_type: 'authorization_code', code, client_id: clientId,
+    code_verifier: verifier, redirect_uri: redirectUri });
+  const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+  if (isGoogle) body.set('client_secret', clientSecret);
+  else headers.Authorization = 'Basic ' + btoa(clientId + ':' + clientSecret);
   let response;
   try {
-    response = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(10000),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ grant_type: 'authorization_code', code, client_id: clientId,
-        client_secret: env.GOOGLE_CLIENT_SECRET.trim(), code_verifier: verifier, redirect_uri: redirectUri }).toString(),
+    response = await fetch(provider.token, {
+      method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(10000), headers, body: body.toString(),
     });
   } catch (error) {
-    console.warn('Google OAuth failed: token_network ' + googleNetworkReason(error));
+    console.warn(id + ' OAuth failed: token_network ' + googleNetworkReason(error));
     return abort('failed');
   }
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     const reason = googleProviderErrors.has(payload?.error) ? payload.error : 'unknown';
-    console.warn('Google OAuth failed: token_http ' + response.status + ' ' + reason);
+    console.warn(id + ' OAuth failed: token_http ' + response.status + ' ' + reason);
     return abort('failed');
   }
-  let profile;
+
+  let claims;
   try {
-    profile = await verifiedGoogleProfile(payload?.id_token, clientId, nonce);
+    claims = await verifiedClaims(provider, payload?.id_token, clientId, nonce, isGoogle);
   } catch (error) {
     const reason = googleTokenFailures.has(error?.message) ? error.message : 'id_token_processing';
-    console.warn('Google OAuth failed: ' + reason);
+    console.warn(id + ' OAuth failed: ' + reason);
     return abort('failed');
   }
-  if (!profile) return abort('email');
-  const { email, name } = profile;
-  const db = env.DB;
-  if (!await googleRole(env, email)) {
-    await revokeGoogleSession(request, db);
-    return abort(email === normalizeEmail(env.OWNER_EMAIL) ? 'owner' : 'denied', [clearSession]);
+
+  const phone = isGoogle ? '' : belarusPhone(claims.phone_number);
+  if (!isGoogle && !phone) return abort('phone');
+  const profile = isGoogle ? googleProfile(claims) : await accountForPhone(env, phone);
+  if (!profile || !await accountRole(env, profile.email)) return abort(isGoogle && !profile ? 'email' : 'denied');
+  return redirect('/admin', [authCookie(flowCookie, '', 0), await createSession(request, env, profile, id, phone)]);
+}
+
+function randomCode() {
+  const value = new Uint32Array(1);
+  do { crypto.getRandomValues(value); } while (value[0] >= 4294000000);
+  return String(value[0] % 1000000).padStart(6, '0');
+}
+
+function codeKey(env) {
+  return crypto.subtle.importKey('raw', fromBase64url(env.PHONE_CODE_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+}
+
+async function sendPhoneCode(env, channel, phone, code, id) {
+  const message = { from: env[messageSenders[channel]].trim(), content: [{ type: 'text', text: 'Тап. Код входа: ' + code }] };
+  if (channel === 'viber') message.label = 'transaction';
+  const response = await fetch('https://msg.messaggio.com/api/v1/send', {
+    method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(10000),
+    headers: { 'Content-Type': 'application/json', 'Messaggio-Login': env.MESSAGGIO_LOGIN.trim() },
+    body: JSON.stringify({ recipients: [{ phone: phone.slice(1) }], channels: [channel],
+      options: { ttl: codeAge, external_id: id }, [channel]: message }),
+  });
+  if (!response.ok) throw new Error('Message provider rejected the request.');
+  await q(env.DB, 'UPDATE phone_login_codes SET delivered=1 WHERE id=?', id).run();
+}
+
+async function startPhoneLogin(props, url, env, ctx) {
+  const { channel } = props;
+  if (!messagesReady(channel, env, url)) fail(503, 'Этот способ входа пока недоступен.');
+  const phone = belarusPhone(props.phone);
+  if (!phone) fail(400, 'Введите девять цифр номера после +375.');
+  const id = randomToken();
+  const profile = await accountForPhone(env, phone);
+  if (profile) {
+    const now = nowSeconds();
+    const db = env.DB;
+    const code = randomCode();
+    const hash = base64url(new Uint8Array(await crypto.subtle.sign('HMAC', await codeKey(env), encoder.encode(id + ':' + code))));
+    await q(db, 'DELETE FROM phone_login_codes WHERE created_at<=?', now - 86400).run();
+    const created = await q(db, 'INSERT INTO phone_login_codes (id, email, phone, channel, code_hash, created_at, expires_at) ' +
+      'SELECT ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM phone_login_codes WHERE phone=? AND created_at>?) ' +
+      'AND (SELECT COUNT(*) FROM phone_login_codes WHERE phone=? AND created_at>?) < 8 RETURNING id',
+    id, profile.email, phone, channel, hash, now, now + codeAge, phone, now - codeRetry, phone, now - 3600).first();
+    if (created) {
+      const pending = sendPhoneCode(env, channel, phone, code, id).catch(() => console.warn('Could not send a login code via ' + channel));
+      ctx?.waitUntil?.(pending);
+    }
   }
-  const token = randomToken();
-  await q(db, 'DELETE FROM google_sessions WHERE expires_at<=?', nowSeconds()).run();
-  await q(db, 'INSERT INTO google_sessions (token_hash, email, name, expires_at) VALUES (?, ?, ?, ?)',
-    await digest(token), email, name, nowSeconds() + googleSessionAge).run();
-  return redirect('/admin', [clearFlow, authCookie(googleSessionCookie, token, googleSessionAge)]);
+  return json({ challenge: id, retryIn: codeRetry }, 202);
+}
+
+async function verifyPhoneLogin(request, props, url, env) {
+  const { challenge, code } = props;
+  const invalidCode = 'Код неверный или уже истёк. Запросите новый код.';
+  if (!validToken(challenge) || typeof code !== 'string' || !/^[0-9]{6}$/.test(code)) fail(400, invalidCode);
+  const db = env.DB;
+  const now = nowSeconds();
+  const row = await q(db, 'UPDATE phone_login_codes SET attempts=attempts+1 ' +
+    'WHERE id=? AND expires_at>? AND used=0 AND delivered=1 AND attempts<? ' +
+    'AND NOT EXISTS (SELECT 1 FROM phone_login_codes newer WHERE newer.phone=phone_login_codes.phone ' +
+    'AND newer.created_at>phone_login_codes.created_at) RETURNING email, phone, channel, code_hash',
+  challenge, now, codeAttemptLimit).first();
+  if (!row || !messagesReady(row.channel, env, url) || !await crypto.subtle.verify('HMAC', await codeKey(env),
+    fromBase64url(row.code_hash), encoder.encode(challenge + ':' + code))) fail(400, invalidCode);
+  if (!await q(db, 'UPDATE phone_login_codes SET used=1 WHERE id=? AND used=0 AND expires_at>? ' +
+    'AND NOT EXISTS (SELECT 1 FROM phone_login_codes newer WHERE newer.phone=phone_login_codes.phone ' +
+    'AND newer.created_at>phone_login_codes.created_at) RETURNING id',
+    challenge, nowSeconds()).first()) fail(400, invalidCode);
+  const profile = await accountForPhone(env, row.phone);
+  if (!profile || profile.email !== row.email) fail(400, invalidCode);
+  const response = json({ ok: true });
+  response.headers.append('Set-Cookie', await createSession(request, env, profile, row.channel, row.phone));
+  return response;
+}
+
+async function phoneAuth(request, url, env, ctx) {
+  if (request.method !== 'POST') fail(405, 'Действие недоступно.');
+  sameOrigin(request, url);
+  const props = await body(request, 2048);
+  if (!props || typeof props !== 'object') fail(400, 'Укажите данные для входа.');
+  return url.pathname.endsWith('/start') ? startPhoneLogin(props, url, env, ctx) : verifyPhoneLogin(request, props, url, env);
 }
 
 async function readBodyBytes(request, limit, tooLarge) {
@@ -879,6 +1004,42 @@ async function feedbackInbox(db, id, params) {
   return json({ reviews: rows.slice(0, 24), page, hasMore: rows.length > 24 });
 }
 
+async function saveAdministrator(request, env, site, emailToEdit) {
+  const props = await body(request);
+  if (!props || typeof props !== 'object') fail(400, 'Укажите данные администратора.');
+  const email = normalizeEmail(emailToEdit ?? props.email);
+  if (email.length > 254 || !emailPattern.test(email) || email === normalizeEmail(env.OWNER_EMAIL)) {
+    fail(400, 'Укажите email администратора.');
+  }
+  const firstName = typeof props.first_name === 'string' ? props.first_name.trim() : '';
+  const lastName = typeof props.last_name === 'string' ? props.last_name.trim() : '';
+  if (!firstName || !lastName || firstName.length > 80 || lastName.length > 80) fail(400, 'Укажите имя и фамилию администратора.');
+  const phone = belarusPhone(props.phone);
+  if (!phone) fail(400, 'Введите девять цифр номера после +375.');
+  if (phone === belarusPhone(env.OWNER_PHONE)) fail(409, 'Этот номер назначен владельцу.');
+  const nickname = typeof props.telegram_username === 'string' ? props.telegram_username.trim().replace(/^@/, '') : '';
+  if (nickname && !/^[a-zA-Z0-9_]{3,32}$/.test(nickname)) fail(400, 'Проверьте ник в Telegram.');
+  const db = env.DB;
+  const profile = 'INSERT INTO admin_profiles (email, first_name, last_name, phone, telegram_username) ';
+  const update = ' ON CONFLICT (email) DO UPDATE SET first_name=excluded.first_name, last_name=excluded.last_name, ' +
+    'phone=excluded.phone, telegram_username=excluded.telegram_username';
+  try {
+    if (emailToEdit !== undefined) {
+      const saved = await q(db, profile + 'SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM site_admins WHERE site_id=? AND email=?)' +
+        update + ' RETURNING email', email, firstName, lastName, phone, nickname, site.id, email).first();
+      if (!saved) fail(404, 'Администратор не назначен этому сайту.');
+    } else {
+      await db.batch([
+        q(db, profile + 'VALUES (?, ?, ?, ?, ?)' + update, email, firstName, lastName, phone, nickname),
+        q(db, 'INSERT INTO site_admins (site_id, email) VALUES (?, ?) ON CONFLICT DO NOTHING', site.id, email),
+      ]);
+    }
+  } catch (error) {
+    if (String(error.message).includes('UNIQUE constraint failed: admin_profiles.phone')) fail(409, 'Этот номер уже назначен другому администратору.');
+    throw error;
+  }
+}
+
 async function api(request, url, env) {
   const db = env.DB;
   const feedback = url.pathname.match(/^\/api\/feedback\/([a-z0-9-]+)$/);
@@ -886,6 +1047,8 @@ async function api(request, url, env) {
   const user = await actor(request, env);
   if (url.pathname === '/api/session' && request.method === 'GET') return json({
     user, ownerConfigured: !!env.OWNER_EMAIL || !!env.DEMO_MODE, googleAvailable: googleReady(env, url),
+    telegramAvailable: oidcReady(oidcProviders.telegram, env, url),
+    smsAvailable: messagesReady('sms', env, url), viberAvailable: messagesReady('viber', env, url),
     selfHosted: !!env.SELF_HOSTED,
   });
   if (!user) fail(401, 'Войдите в панель управления.');
@@ -909,7 +1072,8 @@ async function api(request, url, env) {
       LEFT JOIN items ON items.site_id=sites.id WHERE sites.id=? ORDER BY ${itemOrder}`, site.id);
     if (!rows.length) fail(404, 'Сайт не найден или недоступен.');
     const items = rows.filter((row) => row.id !== null).map(({ menu_order_version, ...item }) => itemWithPhoto(item, true));
-    const admins = user.role === 'owner' ? await all(db, 'SELECT email FROM site_admins WHERE site_id = ? ORDER BY email', site.id) : [];
+    const admins = user.role === 'owner' ? await all(db, 'SELECT a.email, p.first_name, p.last_name, p.phone, p.telegram_username ' +
+      'FROM site_admins a LEFT JOIN admin_profiles p ON p.email=a.email WHERE a.site_id=? ORDER BY p.first_name, p.last_name, a.email', site.id) : [];
     const tips = user.role === 'owner' ? getTipForm(await tipSettings(db, site.id), env) : null;
     const unreadFeedback = (await q(db, 'SELECT COUNT(*) AS count FROM site_feedback WHERE site_id=? AND read_at IS NULL', site.id).first()).count;
     return json({ user, site: siteWithPhotos(site, true), items, menuOrderVersion: rows[0].menu_order_version, admins, tips, unreadFeedback });
@@ -981,15 +1145,14 @@ async function api(request, url, env) {
   if (section === 'admins') {
     if (user.role !== 'owner') fail(403, 'Управлять доступом может владелец.');
     if (!key && method === 'POST') {
-      const email = normalizeEmail((await body(request)).email);
-      if (email.length > 254 || !emailPattern.test(email) || email === user.email) fail(400, 'Укажите email администратора.');
-      await q(db, 'INSERT INTO site_admins (site_id, email) VALUES (?, ?) ON CONFLICT DO NOTHING', site.id, email).run();
+      await saveAdministrator(request, env, site);
       return json({ ok: true }, 201);
     }
-    if (key && method === 'DELETE') {
+    if (key && ['PUT', 'DELETE'].includes(method)) {
       let email;
-      try { email = decodeURIComponent(key); } catch { fail(400, 'Некорректный адрес.'); }
-      await q(db, 'DELETE FROM site_admins WHERE site_id=? AND email=?', site.id, email).run();
+      try { email = normalizeEmail(decodeURIComponent(key)); } catch { fail(400, 'Некорректный адрес.'); }
+      if (method === 'PUT') await saveAdministrator(request, env, site, email);
+      else await q(db, 'DELETE FROM site_admins WHERE site_id=? AND email=?', site.id, email).run();
       return json({ ok: true });
     }
   }
@@ -1239,7 +1402,10 @@ export function createApp(assets) {
         const url = new URL(request.url);
         const path = url.pathname;
         if (path.startsWith('/api/')) return await api(request, url, env);
-        if (['/auth/google', googleReturnPath, '/auth/signout'].includes(path)) return await googleAuth(request, url, env);
+        if (path === '/auth/signout') return await signOut(request, url, env);
+        const oidc = path.match(/^\/auth\/(google|telegram)(?:\/return)?$/);
+        if (oidc) return await oidcAuth(request, url, env, oidc[1]);
+        if (['/auth/phone/start', '/auth/phone/verify'].includes(path)) return await phoneAuth(request, url, env, ctx);
         if (request.method === 'POST' && path.startsWith('/webhooks/bepaid/')) {
           return await bePaidNotification(request, env, path.slice('/webhooks/bepaid/'.length));
         }

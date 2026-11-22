@@ -71,8 +71,6 @@ const themes = {
 const featuredThemes = ['light', 'dark', 'coffee', 'slate', 'garden'];
 const nextDay = (value, offset) => new Date(Date.parse(value + 'T00:00:00Z') + offset * 86400000).toISOString().slice(0, 10);
 const nfcUrl = (site) => location.origin + '/' + site.slug + '?nfc=' + encodeURIComponent(site.nfc_key);
-const signIn = '/signin-with-chatgpt?return_to=%2Fadmin';
-const signOut = '/signout-with-chatgpt?return_to=%2F';
 const googleMessages = {
   unavailable: 'Вход через Google ожидает подключения.',
   expired: 'Срок запроса истёк. Начните вход через Google заново.',
@@ -80,7 +78,14 @@ const googleMessages = {
   failed: 'Не удалось войти через Google. Попробуйте ещё раз.',
   email: 'Для входа через Google используйте Gmail или Google Workspace.',
   denied: 'Для этого адреса нет доступа. Попросите владельца добавить ваш email во вкладке «Доступ» нужного мини-сайта.',
-  owner: 'Для входа владельца используйте ChatGPT.',
+};
+const telegramMessages = {
+  unavailable: 'Вход через Telegram ожидает подключения.',
+  expired: 'Срок запроса истёк. Начните вход через Telegram заново.',
+  cancelled: 'Вход через Telegram отменён.',
+  failed: 'Не удалось войти через Telegram. Попробуйте ещё раз.',
+  phone: 'Разрешите Telegram передать подтверждённый белорусский номер телефона.',
+  denied: 'Номер из Telegram не назначен. Попросите владельца добавить его во вкладке «Доступ».',
 };
 const logo = (href = '/admin') => `<a class="brand" href="${href}" aria-label="Тап. Главная"><span class="brand-icon">${svg('nfc', 24)}</span><span>тап<span class="brand-dot">.</span></span></a>`;
 
@@ -142,8 +147,7 @@ function structure(current, content) {
           ${state.showAccount ? `<div class="account-menu">
             <p>${html(user.email)}</p>
             ${user.demo ? `<button data-action="switch-role">${svg('users', 18)} ${user.role === 'owner' ? 'Войти как администратор' : 'Войти как владелец'}</button>` :
-              user.provider === 'google' ? `<form method="post" action="/auth/signout" target="_top"><button type="submit">${svg('logout', 18)} Выйти</button></form>` :
-              `<a href="${signOut}" target="_top">${svg('logout', 18)} Выйти</a>`}</div>` : ''}
+              `<button type="button" data-action="signout">${svg('logout', 18)} Выйти</button>`}</div>` : ''}
         </div>
       </header>
       <main class="main-content">${content}</main>
@@ -490,10 +494,42 @@ function itemsContent(site, items) {
       '<div class="panel empty"><h3>Меню пока пустое</h3><p>Добавьте позицию, чтобы она появилась на странице заведения.</p></div>'}`;
 }
 
+function phoneField(number = '', autocomplete = '') {
+  return `<label>Номер телефона<span class="phone-control"><span aria-hidden="true">+375</span>
+    <input name="phone_digits" type="tel" inputmode="numeric" pattern="[0-9]{9}" maxlength="9" required
+      ${autocomplete ? 'autocomplete="tel-national"' : ''} aria-label="Девять цифр номера после +375" value="${html(number.slice(4))}">
+  </span></label>`;
+}
+
+function adminDialog(admin = {}) {
+  const editing = !!admin.email;
+  showModal(editing ? 'Данные администратора' : 'Добавить администратора',
+    `<form id="adminForm" class="form-stack" data-email="${html(admin.email || '')}">
+      <div class="form-grid">
+        <label>Имя<input name="first_name" maxlength="80" required value="${html(admin.first_name || '')}"></label>
+        <label>Фамилия<input name="last_name" maxlength="80" required value="${html(admin.last_name || '')}"></label>
+      </div>
+      <label>Электронная почта<input name="email" type="email" maxlength="254" required ${editing ? 'readonly' : ''}
+        value="${html(admin.email || '')}"></label>
+      ${phoneField(admin.phone || '')}
+      <label>Ник в Telegram<input name="telegram_username" maxlength="33" placeholder="@username" value="${html(admin.telegram_username ? '@' + admin.telegram_username : '')}"></label>
+      <p class="form-error" role="alert"></p>
+      <button class="button primary" type="submit">${editing ? 'Сохранить' : 'Выдать доступ'}</button>
+    </form>`);
+}
+
 function accessContent(admins) {
-  return `<div class="panel form-panel"><h2>Администраторы сайта</h2><p>Укажите email, с которым администратор будет входить. Он сможет редактировать меню и видеть статистику этой страницы.</p>
-   <form id="adminForm" class="inline-form"><input name="email" type="email" required maxlength="254" placeholder="name@example.com" aria-label="Email администратора"><button class="button primary" type="submit">Добавить</button><p class="form-error" role="alert"></p></form>
-   ${admins.length ? `<ul class="access-list">${admins.map(({ email }) => `<li><span>${svg('users', 18)}${html(email)}</span><button class="icon-button danger" data-action="delete-admin" data-email="${html(email)}" aria-label="Отозвать доступ">${svg('trash', 18)}</button></li>`).join('')}</ul>` : '<p class="muted">Администраторы пока не назначены.</p>'}</div>`;
+  return `<div class="panel form-panel"><h2>Администраторы сайта</h2><p>Администратор может редактировать меню и видеть статистику этого мини-сайта.</p>
+    ${admins.length ? `<ul class="access-list">${admins.map((admin) => {
+      const { email, first_name, last_name, phone, telegram_username } = admin;
+      const name = [first_name, last_name].filter(Boolean).join(' ');
+      const details = [name && email, phone, telegram_username && '@' + telegram_username].filter(Boolean).join(' · ');
+      return `<li><div class="admin-identity">${svg('users', 18)}<div><strong>${html(name || email)}</strong>${details ? `<small>${html(details)}</small>` : ''}</div></div>
+        <div class="row-actions"><button class="icon-button" data-action="edit-admin" data-email="${html(email)}" aria-label="Изменить данные администратора">${svg('pencil', 18)}</button>
+        <button class="icon-button danger" data-action="delete-admin" data-email="${html(email)}" aria-label="Отозвать доступ">${svg('trash', 18)}</button></div></li>`;
+    }).join('')}</ul>` : '<p class="muted">Администраторы пока не назначены.</p>'}
+    <button class="button primary" type="button" data-action="new-admin">Добавить администратора</button>
+  </div>`;
 }
 
 function tipsForm(settings) {
@@ -758,17 +794,67 @@ function notice(title, description, action = '') {
   app.innerHTML = `<main class="notice"><div class="notice-box panel">${logo()}<h1>${html(title)}</h1><p>${html(description)}</p>${action}</div></main>`;
 }
 
-function loginOptions(googleAvailable, error, selfHosted) {
+function loginOptions({ googleAvailable, telegramAvailable, smsAvailable, viberAvailable }, error) {
   const googleIcon = '<img src="https://developers.google.com/static/identity/images/g-logo.png" width="18" height="18" alt="">';
   return `<div class="login-options">
     ${error ? `<p class="login-status" role="alert">${html(error)}</p>` : ''}
-    ${selfHosted ? '' : `<a class="button primary" href="${signIn}" target="_top">Войти через ChatGPT</a>`}
     ${googleAvailable
       ? `<a class="button secondary google-button" href="/auth/google" target="_top">${googleIcon}Войти через Google</a>`
       : `<button class="button secondary google-button" type="button" disabled aria-describedby="googleSetup">${googleIcon}Войти через Google</button><small id="googleSetup">Ожидает подключения</small>`}
+    ${telegramAvailable ? '<a class="button secondary" href="/auth/telegram" target="_top">Войти через Telegram</a>' : ''}
+    ${smsAvailable || viberAvailable ? `<form id="phoneStartForm" class="form-stack">
+      ${phoneField('', true)}
+      ${smsAvailable ? '<button class="button primary" name="channel" value="sms" type="submit">Получить SMS</button>' : ''}
+      ${viberAvailable ? '<button class="button secondary" name="channel" value="viber" type="submit">Получить код в Viber</button>' : ''}
+      <p class="form-error" role="alert"></p>
+    </form><form id="phoneVerifyForm" class="form-stack" hidden>
+      <p class="phone-status" role="status"></p>
+      <label>Код из сообщения<input name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label>
+      <button class="button primary" type="submit">Войти</button>
+      <button class="button secondary" type="button" data-phone-back>Назад</button>
+      <p class="form-error" role="alert"></p>
+    </form>` : ''}
   </div>`;
 }
 
+function bindPhoneLogin(settings) {
+  const start = document.querySelector('#phoneStartForm');
+  if (!start) return;
+  const verify = document.querySelector('#phoneVerifyForm');
+  let challenge;
+  async function submit(event, action) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const error = form.querySelector('.form-error');
+    const buttons = [...form.querySelectorAll('button')];
+    error.textContent = '';
+    buttons.forEach((button) => { button.disabled = true; });
+    try { await action(); }
+    catch (failure) { error.textContent = failure.message; }
+    finally { buttons.forEach((button) => { button.disabled = false; }); }
+  }
+  start.addEventListener('submit', (event) => submit(event, async () => {
+    const channel = event.submitter?.value || (settings.smsAvailable ? 'sms' : 'viber');
+    const phone = '+375' + start.elements.phone_digits.value;
+    ({ challenge } = await api('/auth/phone/start', { method: 'POST', body: { channel, phone } }));
+    verify.querySelector('.phone-status').textContent = 'Если номер назначен, код придёт ' +
+      (channel === 'sms' ? 'по SMS.' : 'в Viber.');
+    verify.querySelector('.form-error').textContent = '';
+    start.hidden = true;
+    verify.hidden = false;
+    verify.elements.code.focus();
+  }));
+  verify.addEventListener('submit', (event) => submit(event, async () => {
+    await api('/auth/phone/verify', { method: 'POST', body: { challenge, code: verify.elements.code.value } });
+    location.replace('/admin');
+  }));
+  verify.querySelector('[data-phone-back]').addEventListener('click', () => {
+    verify.reset();
+    verify.hidden = true;
+    start.hidden = false;
+    start.elements.phone_digits.focus();
+  });
+}
 let toastTimer;
 function toast(message, icon = 'check') {
   const element = document.querySelector('#toast');
@@ -1201,6 +1287,16 @@ async function onClick(event) {
     state.showAccount = !state.showAccount;
     render();
   }
+  if (action === 'signout') {
+    trigger.disabled = true;
+    try {
+      await api('/auth/signout', { method: 'POST', body: {} });
+      location.replace('/admin');
+    } catch (error) {
+      trigger.disabled = false;
+      toast(error.message);
+    }
+  }
   if (action === 'mobile-nav') {
     state.mobileNav = !state.mobileNav;
     render();
@@ -1238,6 +1334,11 @@ async function onClick(event) {
   if (action === 'delete-item') {
     const item = state.details.items.find((entry) => entry.id === trigger.dataset.id);
     if (item) confirmDialog('Удалить позицию?', '«' + item.name + '» исчезнет из меню.', 'data-item', item.id, 'Удалить', item.edit_version);
+  }
+  if (action === 'new-admin') adminDialog();
+  if (action === 'edit-admin') {
+    const admin = state.details.admins.find(({ email }) => email === trigger.dataset.email);
+    if (admin) adminDialog(admin);
   }
   if (action === 'delete-admin') confirmDialog('Отозвать доступ?', trigger.dataset.email + ' потеряет доступ к этому мини-сайту.', 'data-email', trigger.dataset.email, 'Отозвать');
   if (action === 'copy-nfc') {
@@ -1306,8 +1407,12 @@ async function onSubmit(event) {
       toast('Позиция сохранена');
     }
     if (form.id === 'adminForm') {
-      await api(base + '/admins', { method: 'POST', body: data });
-      toast('Доступ выдан');
+      const email = form.dataset.email;
+      const { phone_digits, ...profile } = data;
+      await api(base + '/admins' + (email ? '/' + encodeURIComponent(email) : ''),
+        { method: email ? 'PUT' : 'POST', body: { ...profile, phone: '+375' + phone_digits } });
+      modal.close();
+      toast(email ? 'Данные сохранены' : 'Доступ выдан');
     }
     if (form.id === 'tipsForm') {
       const links = Object.fromEntries(Object.keys(tipLinks).map((id) => [id, {
@@ -1343,14 +1448,16 @@ async function start() {
   if (page.site) { landing(page); return; }
   try { state.demoRole = sessionStorage.getItem('tap-demo-role'); } catch { /* storage disabled */ }
   try {
-    const { user, ownerConfigured, googleAvailable, selfHosted } = await api('/api/session');
-    const googleCode = new URLSearchParams(location.search).get('google');
+    const settings = await api('/api/session');
+    const { user, ownerConfigured } = settings;
+    const query = new URLSearchParams(location.search);
+    const googleCode = query.get('google');
+    const telegramCode = query.get('telegram');
     const googleError = Object.hasOwn(googleMessages, googleCode) ? googleMessages[googleCode] : '';
-    if (!user || googleError) {
-      const instructions = selfHosted
-        ? 'Войдите через Google с email, которому предоставлен доступ.'
-        : 'Владелец входит через ChatGPT. Администраторы мини-сайтов могут войти через Google с назначенным email.';
-      notice('Панель управления', instructions, loginOptions(googleAvailable, googleError, selfHosted));
+    const telegramError = Object.hasOwn(telegramMessages, telegramCode) ? telegramMessages[telegramCode] : '';
+    if (!user || googleError || telegramError) {
+      notice('Панель управления', 'Войдите по почте или номеру, указанным владельцем.', loginOptions(settings, googleError || telegramError));
+      bindPhoneLogin(settings);
       return;
     }
     if (!ownerConfigured) {
