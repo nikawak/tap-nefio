@@ -283,6 +283,95 @@ test('Telegram accepts a signed assigned phone and ignores a matching nickname o
   assert.deepEqual(sites.map(({ slug }) => slug), ['moka-coffee']);
 });
 
+test('the password migration preserves existing sessions and phone revocation', (t) => {
+  const db = new DatabaseSync(':memory:');
+  t.after(() => db.close());
+  const migrations = JSON.parse(read('drizzle/meta/_journal.json')).entries.map(({ tag }) => tag);
+  const passwordMigration = migrations.pop();
+  for (const tag of migrations) db.exec(read('drizzle/' + tag + '.sql'));
+  seedDemo(db);
+  db.prepare('INSERT INTO admin_profiles (email, first_name, last_name, phone) VALUES (?, ?, ?, ?)')
+    .run(manager, profile.first_name, profile.last_name, adminPhone);
+  const insert = db.prepare('INSERT INTO google_sessions (token_hash, email, name, expires_at, provider, phone) VALUES (?, ?, ?, ?, ?, ?)');
+  insert.run('google-session', owner, 'Owner', 1, 'google', '');
+  insert.run('telegram-session', manager, 'Manager', 1, 'telegram', adminPhone);
+  db.exec(read('drizzle/' + passwordMigration + '.sql'));
+  const providers = () => db.prepare('SELECT provider FROM google_sessions ORDER BY provider').all().map(({ provider }) => provider);
+  assert.deepEqual(providers(), ['google', 'telegram']);
+  db.prepare('UPDATE admin_profiles SET phone=? WHERE email=?').run('+375331000000', manager);
+  assert.deepEqual(providers(), ['google']);
+});
+
+test('the owner can set passwords and sign in by login or email with assignment checks', async (t) => {
+  const { db, request, googleLogin, env } = fixture(t);
+  const cookie = signInCookie(await googleLogin(owner));
+  const setPassword = (path, body, session = cookie) => request(path, { cookie: session, method: 'PUT', body });
+  const enter = (identifier, password, requestOrigin) => request('/auth/password', { method: 'POST', requestOrigin, body: { identifier, password } });
+  const ownerPassword = '  Owner café with spaces  ';
+  const managerPassword = 'Manager long password';
+  const admin = '/api/sites/moka-coffee/admins/' + encodeURIComponent(manager);
+  assert.equal((await enter(owner, ownerPassword)).status, 503);
+  env.SELF_HOSTED = true;
+  assert.equal((await (await request('/api/session')).json()).passwordAvailable, true);
+  assert.equal((await request('/api/password')).status, 401);
+  assert.equal((await setPassword('/api/password', { login: 'Owner.Login', password: 'short' })).status, 400);
+  assert.equal((await setPassword('/api/password', { login: 'Owner.Login', password: ownerPassword })).status, 200);
+  assert.deepEqual(await (await request('/api/password', { cookie })).json(), { configured: true, login: 'owner.login' });
+  const stored = db.prepare('SELECT salt, password_hash FROM password_accounts WHERE email=?').get(owner);
+  assert.match(stored.salt, /^[A-Za-z0-9_-]{43}$/);
+  assert.match(stored.password_hash, /^[A-Za-z0-9_-]{43}$/);
+  assert.equal((await enter(owner, ownerPassword, 'https://elsewhere.test')).status, 403);
+  assert.equal((await enter(owner, ownerPassword.trim())).status, 401);
+  assert.equal((await enter('unknown-login', ownerPassword)).status, 401);
+  const ownerLogin = await enter(' OWNER.LOGIN ', ownerPassword.normalize('NFD'));
+  assert.equal(ownerLogin.status, 200);
+  const ownerCookie = signInCookie(ownerLogin);
+  const ownerSession = await (await request('/api/session', { cookie: ownerCookie })).json();
+  assert.deepEqual([ownerSession.user.role, ownerSession.user.provider], ['owner', 'password']);
+  assert.equal((await enter(owner.toUpperCase(), ownerPassword)).status, 200);
+
+  assert.equal((await setPassword(admin + '/password', { password: managerPassword })).status, 404);
+  await request('/api/sites/moka-coffee/admins', { cookie, method: 'POST', body: profile });
+  assert.equal((await setPassword(admin + '/password', { login: 'OWNER.LOGIN', password: managerPassword })).status, 409);
+  assert.equal((await setPassword(admin + '/password', { password: managerPassword })).status, 200);
+  const managerCookie = signInCookie(await enter(manager, managerPassword));
+  const { user, sites } = await (await request('/api/sites', { cookie: managerCookie })).json();
+  assert.deepEqual([user.role, user.provider, user.name], ['manager', 'password', 'Анна Орлова']);
+  assert.deepEqual(sites.map(({ slug }) => slug), ['moka-coffee']);
+  assert.equal((await setPassword('/api/password', { password: managerPassword }, managerCookie)).status, 403);
+  assert.equal((await setPassword(admin + '/password', { password: managerPassword }, managerCookie)).status, 403);
+
+  assert.equal((await setPassword(admin + '/password', { login: 'anna', password: 'Updated manager password' })).status, 200);
+  assert.equal((await request('/api/sites', { cookie: managerCookie })).status, 401);
+  const newManagerCookie = signInCookie(await enter('anna', 'Updated manager password'));
+  assert.ok(newManagerCookie);
+  assert.equal((await request(admin, { cookie, method: 'DELETE' })).status, 200);
+  assert.equal((await request('/api/sites', { cookie: newManagerCookie })).status, 401);
+  assert.equal((await enter('anna', 'Updated manager password')).status, 401);
+  assert.equal((await request('/api/password', { cookie, method: 'DELETE' })).status, 200);
+  assert.equal((await request('/api/sites', { cookie: ownerCookie })).status, 401);
+  assert.equal((await request('/api/sites', { cookie })).status, 200);
+});
+
+test('email and login share a password attempt limit and the server limits total work', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1795219200000 });
+  const { db, request, googleLogin, env } = fixture(t);
+  env.SELF_HOSTED = true;
+  const cookie = signInCookie(await googleLogin(owner));
+  const password = 'Owner test password';
+  await request('/api/password', { cookie, method: 'PUT', body: { login: 'owner', password } });
+  const enter = (identifier, password) => request('/auth/password', { method: 'POST', body: { identifier, password } });
+  assert.equal((await enter(owner, 'incorrect')).status, 401);
+  assert.equal((await enter('owner', 'incorrect')).status, 401);
+  assert.equal(db.prepare('SELECT attempts FROM password_accounts').get().attempts, 2);
+  db.exec('UPDATE password_accounts SET attempts=8');
+  assert.equal((await enter(owner, password)).status, 401);
+  db.exec('UPDATE password_auth_budget SET attempts=60');
+  assert.equal((await enter('owner', password)).status, 429);
+  t.mock.timers.tick(300000);
+  assert.equal((await enter('owner', password)).status, 200);
+});
+
 test('the login page offers configured providers with a fixed Belarus phone prefix', async () => {
   const code = read('public/app.js');
   const app = { innerHTML: '' };
@@ -301,4 +390,31 @@ test('the login page offers configured providers with a fixed Belarus phone pref
   assert.match(app.innerHTML, /Получить код в Viber/);
   assert.match(app.innerHTML, /<span aria-hidden="true">\+375<\/span>/);
   assert.match(app.innerHTML, /name="phone_digits".*pattern="\[0-9\]\{9\}" maxlength="9"/);
+  assert.doesNotMatch(app.innerHTML, /Войти с паролем/);
+});
+
+test('password fields are hidden until the login button is pressed', async () => {
+  const source = read('public/app.js');
+  const app = { innerHTML: '' };
+  let open;
+  let focused = false;
+  const fields = { hidden: true, addEventListener() {}, querySelector: () => ({}),
+    elements: { identifier: { focus() { focused = true; } }, password: { value: '' } } };
+  const toggle = { addEventListener(_type, listener) { open = listener; }, setAttribute(_name, value) { this.expanded = value; } };
+  const elements = { '#app': app, '#modal': { addEventListener() {} }, '#page-data': { textContent: '{}' },
+    '#passwordLoginForm': fields, '#passwordLoginToggle': toggle };
+  await runInNewContext(source, {
+    document: { querySelector: (selector) => elements[selector] }, location: { pathname: '/admin', search: '' },
+    URLSearchParams, FormData, fetch: async () => Response.json({ user: null, passwordAvailable: true }),
+  });
+  assert.match(app.innerHTML, /id="passwordLoginToggle" aria-expanded="false"/);
+  assert.match(app.innerHTML, /id="passwordLoginForm"[^>]+hidden/);
+  open();
+  assert.equal(fields.hidden, false);
+  assert.equal(toggle.expanded, 'true');
+  assert.equal(focused, true);
+  fields.elements.password.value = 'draft';
+  open();
+  assert.equal(fields.hidden, true);
+  assert.equal(fields.elements.password.value, '');
 });

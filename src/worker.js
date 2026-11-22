@@ -35,6 +35,12 @@ const sessionAge = 8 * 3600;
 const codeAge = 300;
 const codeRetry = 60;
 const codeAttemptLimit = 5;
+const passwordLoginPattern = /^[a-z0-9][a-z0-9._-]{2,31}$/;
+const passwordIterations = 600000;
+const passwordAttemptWindow = 300;
+const passwordAttemptLimit = 8;
+const passwordMinuteBudget = 60;
+const invalidPasswordLogin = 'Неверный логин, почта или пароль.';
 const oidcProviders = {
   google: {
     authorization: 'https://accounts.google.com/o/oauth2/v2/auth', token: 'https://oauth2.googleapis.com/token',
@@ -75,6 +81,7 @@ const oidcReady = (provider, env, url) => !!(url.protocol === 'https:' && env[pr
 const googleReady = (env, url) => oidcReady(oidcProviders.google, env, url);
 const messagesReady = (channel, env, url) => !!(url.protocol === 'https:' && validToken(env.PHONE_CODE_SECRET)
   && env.MESSAGGIO_LOGIN?.trim() && Object.hasOwn(messageSenders, channel) && env[messageSenders[channel]]?.trim());
+const passwordReady = (env, url) => !!env.SELF_HOSTED && !env.DEMO_MODE && url.protocol === 'https:';
 const belarusPhone = (value) => typeof value === 'string' && /^\+375[0-9]{9}$/.test(value) ? value : '';
 function googleNetworkReason(error) {
   if (error?.name === 'TimeoutError' || error?.name === 'AbortError') return 'timeout';
@@ -120,12 +127,14 @@ async function actor(request, env) {
   }
   const token = readCookie(request, sessionCookie);
   if (!validToken(token) || new URL(request.url).protocol !== 'https:') return null;
-  const session = await q(env.DB, "SELECT s.email, COALESCE(p.first_name || ' ' || p.last_name, s.name) AS name, s.provider, s.phone " +
-    'FROM google_sessions s LEFT JOIN admin_profiles p ON p.email=s.email WHERE s.token_hash=? AND s.expires_at>?',
+  const session = await q(env.DB, `SELECT s.email, COALESCE(p.first_name || ' ' || p.last_name, s.name) AS name,
+    s.provider, s.phone, a.role AS password_role FROM google_sessions s LEFT JOIN admin_profiles p ON p.email=s.email
+    LEFT JOIN password_accounts a ON a.email=s.email AND a.salt=s.password_salt WHERE s.token_hash=? AND s.expires_at>?`,
     await digest(token), nowSeconds()).first();
   if (!session) return null;
   if (session.phone && (await accountForPhone(env, session.phone))?.email !== session.email) return null;
   const role = await accountRole(env, session.email);
+  if (session.provider === 'password' && session.password_role !== role) return null;
   return role ? actorFor(session.email, session.name, session.provider, role) : null;
 }
 
@@ -159,13 +168,13 @@ async function revokeSession(request, db) {
   if (validToken(token)) await q(db, 'DELETE FROM google_sessions WHERE token_hash=?', await digest(token)).run();
 }
 
-async function createSession(request, env, profile, provider, phone = '') {
+async function createSession(request, env, profile, provider, phone = '', passwordSalt = '') {
   await revokeSession(request, env.DB);
   const token = randomToken();
   const now = nowSeconds();
   await q(env.DB, 'DELETE FROM google_sessions WHERE expires_at<=?', now).run();
-  await q(env.DB, 'INSERT INTO google_sessions (token_hash, email, name, expires_at, provider, phone) VALUES (?, ?, ?, ?, ?, ?)',
-    await digest(token), profile.email, profile.name, now + sessionAge, provider, phone).run();
+  await q(env.DB, `INSERT INTO google_sessions (token_hash, email, name, expires_at, provider, phone, password_salt)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`, await digest(token), profile.email, profile.name, now + sessionAge, provider, phone, passwordSalt).run();
   return authCookie(sessionCookie, token, sessionAge);
 }
 
@@ -379,6 +388,61 @@ async function phoneAuth(request, url, env, ctx) {
   const props = await body(request, 2048);
   if (!props || typeof props !== 'object') fail(400, 'Укажите данные для входа.');
   return url.pathname.endsWith('/start') ? startPhoneLogin(props, url, env, ctx) : verifyPhoneLogin(request, props, url, env);
+}
+
+function readPassword(value, minimum) {
+  if (typeof value !== 'string' || /[\r\n\0]/.test(value)) return '';
+  const normalized = value.normalize('NFC');
+  const length = Array.from(normalized).length;
+  return length >= minimum && length <= 128 ? normalized : '';
+}
+
+async function passwordHash(password, salt) {
+  const key = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']);
+  return base64url(new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256',
+    salt: fromBase64url(salt), iterations: passwordIterations }, key, 256)));
+}
+
+function equalPasswordHashes(actual, expected) {
+  let difference = actual.length ^ expected.length;
+  for (let index = 0; index < actual.length; index += 1) difference |= actual.charCodeAt(index) ^ expected.charCodeAt(index);
+  return difference === 0;
+}
+
+async function passwordAuth(request, url, env) {
+  if (request.method !== 'POST') fail(405, 'Действие недоступно.');
+  if (!passwordReady(env, url)) fail(503, 'Вход с паролем недоступен.');
+  sameOrigin(request, url);
+  const props = await body(request, 2048);
+  const identifier = normalizeEmail(field(props, 'identifier', 254, true));
+  const password = readPassword(props.password, 1);
+  if (!password || !(passwordLoginPattern.test(identifier) || emailPattern.test(identifier))) fail(401, invalidPasswordLogin);
+
+  const db = env.DB;
+  const now = nowSeconds();
+  const budget = await q(db, `INSERT INTO password_auth_budget (id, attempt_window, attempts) VALUES (1, ?, 1)
+    ON CONFLICT (id) DO UPDATE SET attempt_window = excluded.attempt_window,
+      attempts = CASE WHEN password_auth_budget.attempt_window = excluded.attempt_window THEN attempts + 1 ELSE 1 END
+    WHERE password_auth_budget.attempt_window <> excluded.attempt_window OR attempts < ? RETURNING id`,
+  Math.floor(now / 60), passwordMinuteBudget).first();
+  if (!budget) fail(429, 'Слишком много попыток входа. Повторите через минуту.');
+
+  const attemptWindow = Math.floor(now / passwordAttemptWindow);
+  const column = identifier.includes('@') ? 'email' : 'login';
+  const account = await q(db, `UPDATE password_accounts SET attempt_window = ?,
+    attempts = CASE WHEN attempt_window = ? THEN attempts + 1 ELSE 1 END
+    WHERE ${column} = ? AND (attempt_window <> ? OR attempts < ?) RETURNING email, role, salt, password_hash`,
+    attemptWindow, attemptWindow, identifier, attemptWindow, passwordAttemptLimit).first();
+  // Unknown identifiers and throttled accounts follow the same password derivation and error path.
+  const hash = await passwordHash(password, account?.salt ?? 'A'.repeat(43));
+  if (!account || !equalPasswordHashes(hash, account.password_hash) || await accountRole(env, account.email) !== account.role) {
+    fail(401, invalidPasswordLogin);
+  }
+  await q(db, 'UPDATE password_accounts SET attempts=0 WHERE email=? AND salt=?', account.email, account.salt).run();
+  const response = json({ ok: true });
+  response.headers.append('Set-Cookie', await createSession(request, env, { email: account.email, name: account.email.split('@')[0] },
+    'password', '', account.salt));
+  return response;
 }
 
 async function readBodyBytes(request, limit, tooLarge) {
@@ -1051,6 +1115,46 @@ async function saveAdministrator(request, env, site, emailToEdit) {
   }
 }
 
+async function passwordSettings(request, url, env, user, email, site = null) {
+  if (!passwordReady(env, url)) fail(503, 'Вход с паролем недоступен.');
+  if (user.role !== 'owner') fail(403, 'Пароли настраивает владелец.');
+  const db = env.DB;
+  const role = site ? 'manager' : 'owner';
+  const siteId = site?.id ?? null;
+  if (site && (isOwnerEmail(env, email) || !await q(db, 'SELECT 1 FROM site_admins WHERE site_id=? AND email=?', siteId, email).first())) {
+    fail(404, 'Администратор не назначен этому сайту.');
+  }
+  if (request.method === 'GET') {
+    const account = await q(db, 'SELECT login FROM password_accounts WHERE email=? AND role=?', email, role).first();
+    return json({ configured: !!account, login: account?.login ?? '' });
+  }
+  if (request.method === 'DELETE') {
+    await q(db, 'DELETE FROM password_accounts WHERE email=? AND role=?', email, role).run();
+    return json({ ok: true });
+  }
+  if (request.method !== 'PUT') fail(405, 'Действие недоступно.');
+
+  const props = await body(request, 2048);
+  const login = normalizeEmail(field(props, 'login', 32));
+  if (login && !passwordLoginPattern.test(login)) fail(400, 'Логин должен содержать 3–32 символа, начинаться с латинской буквы или цифры и может включать точку, дефис и подчёркивание.');
+  const password = readPassword(props.password, 15);
+  if (!password) fail(400, 'Укажите пароль длиной от 15 до 128 символов.');
+  const salt = randomToken();
+  const hash = await passwordHash(password, salt);
+  try {
+    const saved = await q(db, `INSERT INTO password_accounts (email, login, role, salt, password_hash)
+      SELECT ?, ?, ?, ?, ? WHERE ? IS NULL OR EXISTS (SELECT 1 FROM site_admins WHERE site_id=? AND email=?)
+      ON CONFLICT (email) DO UPDATE SET login=excluded.login, role=excluded.role, salt=excluded.salt,
+        password_hash=excluded.password_hash, attempt_window=0, attempts=0 RETURNING email`,
+      email, login || null, role, salt, hash, siteId, siteId, email).first();
+    if (!saved) fail(404, 'Администратор не назначен этому сайту.');
+  } catch (error) {
+    if (String(error.message).includes('UNIQUE constraint failed: password_accounts.login')) fail(409, 'Этот логин уже занят.');
+    throw error;
+  }
+  return json({ ok: true });
+}
+
 async function api(request, url, env) {
   const db = env.DB;
   const feedback = url.pathname.match(/^\/api\/feedback\/([a-z0-9-]+)$/);
@@ -1060,12 +1164,21 @@ async function api(request, url, env) {
     user, ownerConfigured: !!env.OWNER_EMAIL || !!env.DEMO_MODE, googleAvailable: googleReady(env, url),
     telegramAvailable: oidcReady(oidcProviders.telegram, env, url),
     smsAvailable: messagesReady('sms', env, url), viberAvailable: messagesReady('viber', env, url),
-    selfHosted: !!env.SELF_HOSTED,
+    selfHosted: !!env.SELF_HOSTED, passwordAvailable: passwordReady(env, url),
   });
   if (!user) fail(401, 'Войдите в панель управления.');
   const method = request.method;
   if (!['GET', 'HEAD'].includes(method)) {
     if (request.headers.get('origin') !== url.origin) fail(403, 'Откройте панель и повторите действие.');
+  }
+  if (url.pathname === '/api/password') return passwordSettings(request, url, env, user, user.email);
+  const adminPassword = url.pathname.match(/^\/api\/sites\/([a-z0-9-]+)\/admins\/([^/]+)\/password$/);
+  if (adminPassword) {
+    if (user.role !== 'owner') fail(403, 'Пароли настраивает владелец.');
+    const site = await allowedSite(db, user, adminPassword[1]);
+    let email;
+    try { email = normalizeEmail(decodeURIComponent(adminPassword[2])); } catch { fail(400, 'Некорректный адрес.'); }
+    return passwordSettings(request, url, env, user, email, site);
   }
   if (url.pathname === '/api/overview' && method === 'GET') return json(await overview(db, user, url));
   if (url.pathname === '/api/sites' && method === 'GET') return json(await listSites(db, user));
@@ -1417,6 +1530,7 @@ export function createApp(assets) {
         const oidc = path.match(/^\/auth\/(google|telegram)(?:\/return)?$/);
         if (oidc) return await oidcAuth(request, url, env, oidc[1]);
         if (['/auth/phone/start', '/auth/phone/verify'].includes(path)) return await phoneAuth(request, url, env, ctx);
+        if (path === '/auth/password') return await passwordAuth(request, url, env);
         if (request.method === 'POST' && path.startsWith('/webhooks/bepaid/')) {
           return await bePaidNotification(request, env, path.slice('/webhooks/bepaid/'.length));
         }

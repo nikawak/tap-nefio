@@ -4,9 +4,12 @@ const photoSelections = new Map();
 modal.addEventListener('click', (event) => {
   if (event.target === modal || event.target.closest('[data-action="close-dialog"]')) modal.close();
 });
-modal.addEventListener('close', () => clearPhotoPreviews(modal));
+modal.addEventListener('close', () => {
+  clearPhotoPreviews(modal);
+  modal.querySelector('#passwordSettingsForm')?.reset();
+});
 const state = { data: null, user: null, days: 7, siteFilter: '', showAccount: false, mobileNav: false,
-  details: null, loadError: '', statsFailed: false, feedbackQuery: { status: '', rating: '', sort: 'recent', page: 1 } };
+  details: null, loadError: '', statsFailed: false, passwordAvailable: false, feedbackQuery: { status: '', rating: '', sort: 'recent', page: 1 } };
 let activeLoad;
 const page = JSON.parse(document.querySelector('#page-data').textContent);
 const icons = {
@@ -148,7 +151,9 @@ function structure(current, content) {
           ${state.showAccount ? `<div class="account-menu">
             <p>${html(user.email)}</p>
             ${user.demo ? `<button data-action="switch-role">${svg('users', 18)} ${user.role === 'owner' ? 'Войти как администратор' : 'Войти как владелец'}</button>` :
-              `<button type="button" data-action="signout">${svg('logout', 18)} Выйти</button>`}</div>` : ''}
+              `${state.passwordAvailable && user.role === 'owner'
+                ? `<button type="button" data-action="owner-password">${svg('settings', 18)} Логин и пароль</button>` : ''}
+              <button type="button" data-action="signout">${svg('logout', 18)} Выйти</button>`}</div>` : ''}
         </div>
       </header>
       <main class="main-content">${content}</main>
@@ -516,7 +521,50 @@ function adminDialog(admin = {}) {
       <label>Ник в Telegram<input name="telegram_username" maxlength="33" placeholder="@username" value="${html(admin.telegram_username ? '@' + admin.telegram_username : '')}"></label>
       <p class="form-error" role="alert"></p>
       <button class="button primary" type="submit">${editing ? 'Сохранить' : 'Выдать доступ'}</button>
+      ${editing && state.passwordAvailable ? '<button class="button secondary" type="button" data-action="admin-password">Настроить вход с паролем</button>' : ''}
     </form>`);
+}
+
+async function passwordSettingsDialog(path, email, ownAccount) {
+  const { configured, login } = await api(path);
+  showModal('Логин и пароль', `<form id="passwordSettingsForm" class="form-stack" method="post">
+    <label>Почта для входа<input type="email" name="email" autocomplete="username" value="${html(email)}" readonly></label>
+    <label>Логин (необязательно)<input name="login" type="text" maxlength="32" value="${html(login)}"
+      pattern="[A-Za-z0-9][A-Za-z0-9._\\-]{2,31}" autocapitalize="none" spellcheck="false">
+      <small>3–32 символа. Латинские буквы, цифры, точка, дефис и подчёркивание.</small></label>
+    <label>${configured ? 'Новый пароль' : 'Пароль'}<input name="password" type="password" autocomplete="new-password"
+      minlength="15" maxlength="256" required><small>От 15 до 128 символов.</small></label>
+    ${ownAccount ? '' : '<small class="muted">Пароль действует во всех назначенных администратору мини-сайтах.</small>'}
+    <p class="form-error" role="alert"></p>
+    <button class="button primary" type="submit">Сохранить</button>
+    ${configured ? '<button class="button secondary" type="button" data-remove-password>Отключить вход с паролем</button>' : ''}
+  </form>`);
+  const form = modal.querySelector('#passwordSettingsForm');
+  form.elements.login.focus();
+  async function save(method, body) {
+    const error = form.querySelector('.form-error');
+    const buttons = [...form.querySelectorAll('button')];
+    error.textContent = '';
+    buttons.forEach((button) => { button.disabled = true; });
+    try {
+      await api(path, { method, body });
+      modal.close();
+      if (ownAccount && state.user.provider === 'password') {
+        location.replace('/admin');
+        return;
+      }
+      toast(method === 'DELETE' ? 'Вход с паролем отключён' : 'Данные для входа сохранены');
+    } catch (failure) {
+      error.textContent = failure.message;
+    } finally {
+      buttons.forEach((button) => { button.disabled = false; });
+    }
+  }
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    save('PUT', { login: form.elements.login.value, password: form.elements.password.value });
+  });
+  form.querySelector('[data-remove-password]')?.addEventListener('click', () => save('DELETE'));
 }
 
 function accessContent(admins) {
@@ -795,7 +843,7 @@ function notice(title, description, action = '') {
   app.innerHTML = `<main class="notice"><div class="notice-box panel">${logo()}<h1>${html(title)}</h1><p>${html(description)}</p>${action}</div></main>`;
 }
 
-function loginOptions({ googleAvailable, telegramAvailable, smsAvailable, viberAvailable }, error) {
+function loginOptions({ googleAvailable, telegramAvailable, smsAvailable, viberAvailable, passwordAvailable }, error) {
   const googleIcon = '<img src="https://developers.google.com/static/identity/images/g-logo.png" width="18" height="18" alt="">';
   return `<div class="login-options">
     ${error ? `<p class="login-status" role="alert">${html(error)}</p>` : ''}
@@ -803,6 +851,14 @@ function loginOptions({ googleAvailable, telegramAvailable, smsAvailable, viberA
       ? `<a class="button secondary google-button" href="/auth/google" target="_top">${googleIcon}Войти через Google</a>`
       : `<button class="button secondary google-button" type="button" disabled aria-describedby="googleSetup">${googleIcon}Войти через Google</button><small id="googleSetup">Ожидает подключения</small>`}
     ${telegramAvailable ? '<a class="button secondary" href="/auth/telegram" target="_top">Войти через Telegram</a>' : ''}
+    ${passwordAvailable ? `<button class="button secondary" type="button" id="passwordLoginToggle" aria-expanded="false"
+      aria-controls="passwordLoginForm">Войти с паролем</button>
+    <form id="passwordLoginForm" class="form-stack" method="post" hidden>
+      <label>Логин или почта<input name="identifier" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="254" required></label>
+      <label>Пароль<input name="password" type="password" autocomplete="current-password" maxlength="256" required></label>
+      <button class="button primary" type="submit">Войти</button>
+      <p class="form-error" role="alert"></p>
+    </form>` : ''}
     ${smsAvailable || viberAvailable ? `<form id="phoneStartForm" class="form-stack">
       ${phoneField('', true)}
       ${smsAvailable ? '<button class="button primary" name="channel" value="sms" type="submit">Получить SMS</button>' : ''}
@@ -816,6 +872,40 @@ function loginOptions({ googleAvailable, telegramAvailable, smsAvailable, viberA
       <p class="form-error" role="alert"></p>
     </form>` : ''}
   </div>`;
+}
+
+function bindPasswordLogin() {
+  const form = document.querySelector('#passwordLoginForm');
+  if (!form) return;
+  const toggle = document.querySelector('#passwordLoginToggle');
+  const submit = form.querySelector('button[type="submit"]');
+  const error = form.querySelector('.form-error');
+  toggle.addEventListener('click', () => {
+    form.hidden = !form.hidden;
+    toggle.setAttribute('aria-expanded', String(!form.hidden));
+    if (form.hidden) {
+      form.elements.password.value = '';
+      error.textContent = '';
+    } else form.elements.identifier.focus();
+  });
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    error.textContent = '';
+    submit.disabled = true;
+    toggle.disabled = true;
+    try {
+      await api('/auth/password', { method: 'POST', body: {
+        identifier: form.elements.identifier.value, password: form.elements.password.value,
+      } });
+      location.replace('/admin');
+    } catch (failure) {
+      error.textContent = failure.message;
+      form.elements.password.select();
+    } finally {
+      submit.disabled = false;
+      toggle.disabled = false;
+    }
+  });
 }
 
 function bindPhoneLogin(settings) {
@@ -1288,6 +1378,16 @@ async function onClick(event) {
     state.showAccount = !state.showAccount;
     render();
   }
+  if (action === 'owner-password' || action === 'admin-password') {
+    const ownAccount = action === 'owner-password';
+    const email = ownAccount ? state.user.email : trigger.form.dataset.email;
+    const path = ownAccount ? '/api/password' : '/api/sites/' + state.details.site.slug + '/admins/' + encodeURIComponent(email) + '/password';
+    trigger.disabled = true;
+    try { await passwordSettingsDialog(path, email, ownAccount); }
+    catch (failure) { toast(failure.message); }
+    finally { trigger.disabled = false; }
+    return;
+  }
   if (action === 'signout') {
     trigger.disabled = true;
     try {
@@ -1457,7 +1557,8 @@ async function start() {
     const googleError = Object.hasOwn(googleMessages, googleCode) ? googleMessages[googleCode] : '';
     const telegramError = Object.hasOwn(telegramMessages, telegramCode) ? telegramMessages[telegramCode] : '';
     if (!user || googleError || telegramError) {
-      notice('Панель управления', 'Войдите по почте или номеру, указанным владельцем.', loginOptions(settings, googleError || telegramError));
+      notice('Панель управления', 'Войдите с данными, указанными владельцем.', loginOptions(settings, googleError || telegramError));
+      bindPasswordLogin();
       bindPhoneLogin(settings);
       return;
     }
@@ -1466,6 +1567,7 @@ async function start() {
       return;
     }
     state.user = user;
+    state.passwordAvailable = settings.passwordAvailable;
     document.addEventListener('click', onClick);
     document.addEventListener('submit', onSubmit);
     for (const type of ['dragover', 'dragleave', 'drop']) document.addEventListener(type, photoDrop);
