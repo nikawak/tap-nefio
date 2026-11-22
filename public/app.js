@@ -133,6 +133,7 @@ function structure(current, content) {
         }).join('')}
       </div>
       <div class="sidebar-bottom">
+        <a class="nav-link" href="/about">${svg('globe', 19)} <span>О проекте</span></a>
         ${user.demo ? `<div class="demo-note"><span class="demo-dot"></span><div><strong>Демо-режим</strong><small>Пример рабочего пространства</small></div></div>` : ''}
       </div>
     </aside>
@@ -1557,7 +1558,8 @@ async function start() {
     const googleError = Object.hasOwn(googleMessages, googleCode) ? googleMessages[googleCode] : '';
     const telegramError = Object.hasOwn(telegramMessages, telegramCode) ? telegramMessages[telegramCode] : '';
     if (!user || googleError || telegramError) {
-      notice('Панель управления', 'Войдите с данными, указанными владельцем.', loginOptions(settings, googleError || telegramError));
+      notice('Панель управления', 'Войдите с данными, указанными владельцем.',
+        loginOptions(settings, googleError || telegramError) + '<a class="notice-about" href="/about">О проекте «Тап.»</a>');
       bindPasswordLogin();
       bindPhoneLogin(settings);
       return;

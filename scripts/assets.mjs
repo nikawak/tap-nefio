@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 
 const types = {
   'index.html': 'text/html; charset=utf-8',
+  'about.html': 'text/html; charset=utf-8',
   'app.js': 'text/javascript; charset=utf-8',
   'styles.css': 'text/css; charset=utf-8',
   'menu-template.json': 'application/json; charset=utf-8',
@@ -19,7 +20,9 @@ export function readAssets() {
   for (const name of ['app.js', 'styles.css']) {
     const version = createHash('sha256').update(assets[name].text).digest('hex').slice(0, 12);
     const path = '/assets/' + name;
-    assets['index.html'].text = assets['index.html'].text.replace(path, path + '?v=' + version);
+    for (const page of ['index.html', 'about.html']) {
+      assets[page].text = assets[page].text.replace(path, path + '?v=' + version);
+    }
   }
   return assets;
 }

@@ -6,7 +6,7 @@ const themes = [
   'sage', 'mint', 'pine', 'ocean', 'sky', 'steel', 'graphite', 'berry', 'plum', 'rose',
   'coral', 'honey', 'lemon', 'clay', 'copper',
 ];
-const reserved = new Set(['admin', 'api', 'assets', 'auth', 'callback', 'signin-with-chatgpt', 'signout-with-chatgpt', 'favicon.ico']);
+const reserved = new Set(['about', 'admin', 'api', 'assets', 'auth', 'callback', 'signin-with-chatgpt', 'signout-with-chatgpt', 'favicon.ico']);
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const nfcPath = /^\/(?:([a-z0-9-]+)\/)?nfc=([A-Za-z0-9_-]{1,128})\/?$/;
 const photoPrefix = '/assets/menu-photos/';
@@ -1305,6 +1305,10 @@ function shell(assets, data = null, status = 200, state = {}) {
   const safeTitle = title.replace(/[&<>"']/g, (character) => escapes[character]);
   const payload = JSON.stringify(data || state).replace(/</g, '\\u003c');
   const html = assets['index.html'].text.replace('<!--app-data-->', () => payload).replace('<!--page-title-->', () => safeTitle);
+  return htmlResponse(html, status);
+}
+
+function htmlResponse(html, status = 200) {
   return new Response(html, { status, headers: {
     'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
@@ -1543,13 +1547,14 @@ export function createApp(assets) {
         if (path.startsWith('/assets/')) {
           const file = path.slice('/assets/'.length);
           const asset = Object.hasOwn(assets, file) && assets[file];
-          if (!asset || file === 'index.html') return new Response(null, { status: 404 });
+          if (!asset || asset.type.startsWith('text/html')) return new Response(null, { status: 404 });
           const data = asset.text ?? Uint8Array.from(atob(asset.base64), (byte) => byte.charCodeAt(0));
           return new Response(request.method === 'HEAD' ? null : data, { headers: {
             'Content-Type': asset.type, 'Cache-Control': 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff',
           } });
         }
         if (path === '/favicon.ico') return new Response(null, { status: 204 });
+        if (path === '/about' || path === '/about/') return htmlResponse(request.method === 'HEAD' ? null : assets['about.html'].text);
         if ((path === '/' && !url.searchParams.has('nfc')) || path === '/admin' || path.startsWith('/admin/')) return shell(assets);
         return await publicPage(request, url, env, assets, ctx);
       } catch (error) {
