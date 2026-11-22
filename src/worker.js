@@ -288,8 +288,14 @@ async function oidcAuth(request, url, env, id) {
     return abort('failed');
   }
 
-  const phone = isGoogle ? '' : belarusPhone(claims.phone_number);
-  if (!isGoogle && !phone) return abort('phone');
+  let phone = '';
+  if (!isGoogle) {
+    const number = typeof claims.phone_number === 'string' ? claims.phone_number.trim() : '';
+    if (!number || (claims.phone_number_verified !== undefined && claims.phone_number_verified !== true)) return abort('phone');
+    // Telegram can return a verified international number without the leading plus.
+    phone = belarusPhone(number.startsWith('+') ? number : '+' + number);
+    if (!phone) return abort('country');
+  }
   const profile = isGoogle ? googleProfile(claims) : await accountForPhone(env, phone);
   if (!profile || !await accountRole(env, profile.email)) return abort(isGoogle && !profile ? 'email' : 'denied');
   return redirect('/admin', [authCookie(flowCookie, '', 0), await createSession(request, env, profile, id, phone)]);

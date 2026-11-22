@@ -169,7 +169,7 @@ test('a second verified Google address opens the owner panel without granting ow
   assert.equal((await (await request('/api/session', { cookie })).json()).user.role, 'owner');
   assert.equal((await request('/api/sites', { cookie: oldPhoneCookie })).status, 401);
   assert.equal((await oauthLogin('telegram', { phone_number: adminPhone })).headers.get('location'), '/admin?telegram=denied');
-  const ownerPhoneLogin = await oauthLogin('telegram', { phone_number: ownerPhone });
+  const ownerPhoneLogin = await oauthLogin('telegram', { phone_number: ownerPhone.slice(1), phone_number_verified: true });
   const ownerPhoneCookie = signInCookie(ownerPhoneLogin);
   assert.ok(ownerPhoneCookie);
   assert.equal((await (await request('/api/session', { cookie: ownerPhoneCookie })).json()).user.email, owner);
@@ -268,9 +268,14 @@ test('Telegram accepts a signed assigned phone and ignores a matching nickname o
   await request('/api/sites/moka-coffee/admins', { cookie, method: 'POST', body: profile });
   const denied = await oauthLogin('telegram', { phone_number: '+375331000000', preferred_username: 'anna_test' });
   assert.equal(denied.headers.get('location'), '/admin?telegram=denied');
+  assert.equal((await oauthLogin('telegram', {})).headers.get('location'), '/admin?telegram=phone');
+  assert.equal((await oauthLogin('telegram', { phone_number: adminPhone, phone_number_verified: false })).headers.get('location'),
+    '/admin?telegram=phone');
+  assert.equal((await oauthLogin('telegram', { phone_number: '79123456789', phone_number_verified: true })).headers.get('location'),
+    '/admin?telegram=country');
   const unauthorized = await oauthLogin('telegram', { phone_number: adminPhone }, true);
   assert.equal(unauthorized.headers.get('location'), '/admin?telegram=expired');
-  const approved = await oauthLogin('telegram', { phone_number: adminPhone, preferred_username: 'other' });
+  const approved = await oauthLogin('telegram', { phone_number: adminPhone.slice(1), phone_number_verified: true, preferred_username: 'other' });
   assert.equal(approved.headers.get('location'), '/admin');
   const { user, sites } = await (await request('/api/sites', { cookie: signInCookie(approved) })).json();
   assert.equal(user.provider, 'telegram');

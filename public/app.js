@@ -84,7 +84,8 @@ const telegramMessages = {
   expired: 'Срок запроса истёк. Начните вход через Telegram заново.',
   cancelled: 'Вход через Telegram отменён.',
   failed: 'Не удалось войти через Telegram. Попробуйте ещё раз.',
-  phone: 'Разрешите Telegram передать подтверждённый белорусский номер телефона.',
+  phone: 'Подтвердите передачу номера в окне входа Telegram.',
+  country: 'В Telegram должен быть указан белорусский номер с кодом +375.',
   denied: 'Номер из Telegram не назначен. Попросите владельца добавить его во вкладке «Доступ».',
 };
 const logo = (href = '/admin') => `<a class="brand" href="${href}" aria-label="Тап. Главная"><span class="brand-icon">${svg('nfc', 24)}</span><span>тап<span class="brand-dot">.</span></span></a>`;
