@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "name": "Капучино",
+      "category": "Кофе",
+      "description": "Эспрессо и молоко, 250 мл",
+      "price": "5.50",
+      "available": true
+    },
+    {
+      "name": "Круассан",
+      "category": "Выпечка",
+      "price": "4.20"
+    }
+  ]
+}

@@ -1,13 +1,22 @@
 const actionColumns = { maps: 'maps_url', telegram: 'telegram_url', instagram: 'instagram_url', vk: 'vk_url' };
+const contactColumns = Object.values(actionColumns);
 const currencies = ['BYN', 'RUB', 'KZT', 'USD', 'EUR'];
-const themes = ['coffee', 'indigo', 'garden', 'lavender'];
+const themes = [
+  'light', 'dark', 'coffee', 'slate', 'garden', 'indigo', 'lavender', 'peach', 'sand', 'walnut',
+  'sage', 'mint', 'pine', 'ocean', 'sky', 'steel', 'graphite', 'berry', 'plum', 'rose',
+  'coral', 'honey', 'lemon', 'clay', 'copper',
+];
 const reserved = new Set(['admin', 'api', 'assets', 'callback', 'signin-with-chatgpt', 'signout-with-chatgpt', 'favicon.ico']);
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const nfcPath = /^\/(?:([a-z0-9-]+)\/)?nfc=([A-Za-z0-9_-]{1,128})\/?$/;
 const photoPrefix = '/assets/menu-photos/';
+const sitePhotoPrefix = '/assets/site-photos/';
 const photoKeyPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp)$/;
 const photoTypes = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
 const photoLimit = 6 * 1024 * 1024;
+const sitePhotoSlots = ['logo', 'cover'];
+const itemOrder = 'items.sort_order IS NULL, items.sort_order, items.created_at, items.name, items.id';
+const itemChanged = 'Позицию уже изменили или удалили. Закройте форму и проверьте обновлённое меню.';
 const linkTips = {
   alpha: { label: '«нетмонет» · Альфа-Банк', domains: ['alfabank.by'] },
   moneyapp: { label: 'MoneyApp · БСБ Банк', domains: ['bsb.by'] },
@@ -19,12 +28,16 @@ const checkoutTitle = 'Оплата картой через bePaid';
 const checkoutOrigin = 'https://checkout.bepaid.by';
 const checkoutEndpoint = checkoutOrigin + '/ctp/api/checkouts';
 const tipIntentLifetime = 900;
-const paymentIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const googleFlowCookie = '__Host-tap-google-flow';
 const googleSessionCookie = '__Host-tap-session';
 const googleReturnPath = '/auth/google/return';
 const googleFlowAge = 600;
 const googleSessionAge = 8 * 3600;
+const googleProviderErrors = new Set(['invalid_client', 'invalid_grant', 'invalid_request', 'redirect_uri_mismatch',
+  'unauthorized_client', 'unsupported_grant_type', 'invalid_scope', 'access_denied', 'server_error', 'temporarily_unavailable']);
+const googleTokenFailures = new Set(['keys_network', 'keys_http', 'keys_response', 'unknown_signing_key',
+  'invalid_id_token', 'invalid_id_token_header', 'invalid_signature', 'invalid_claims']);
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 let googleKeys;
@@ -44,13 +57,28 @@ function redirect(url, cookies = []) {
 const findSite = (db, slug) => q(db, 'SELECT * FROM sites WHERE slug = ?', slug).first();
 const normalizeEmail = (value) => String(value ?? '').trim().toLowerCase();
 
-const googleReady = (env, url) => !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && url.protocol === 'https:');
+const googleReady = (env, url) => !!(env.GOOGLE_CLIENT_ID?.trim() && env.GOOGLE_CLIENT_SECRET?.trim() && url.protocol === 'https:');
+function googleNetworkReason(error) {
+  if (error?.name === 'TimeoutError' || error?.name === 'AbortError') return 'timeout';
+  const message = String(error?.message ?? '');
+  if (/blocked|denied|forbidden|not allowed|restricted|egress|outbound/i.test(message)) return 'outbound_restricted';
+  if (/content.type|bodyinit|body|serialize/i.test(message)) return 'request_body';
+  return 'network';
+}
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 const hasTipKey = (env) => /^[A-Za-z0-9_-]{43}$/.test(env.TIP_ENCRYPTION_KEY || '');
 
-function actorFor(env, email, name, provider) {
-  return { role: email === normalizeEmail(env.OWNER_EMAIL) ? 'owner' : 'manager',
-    name: name || email.split('@')[0], email, demo: false, provider };
+function actorFor(email, name, provider, role = 'manager') {
+  return { role, name: name || email.split('@')[0], email, demo: false, provider };
+}
+
+function siteAssignment(db, email) {
+  return q(db, 'SELECT 1 FROM site_admins WHERE email=? LIMIT 1', email).first();
+}
+
+async function googleRole(env, email) {
+  if (email === normalizeEmail(env.OWNER_EMAIL)) return env.SELF_HOSTED ? 'owner' : null;
+  return await siteAssignment(env.DB, email) ? 'manager' : null;
 }
 
 async function actor(request, env) {
@@ -60,15 +88,18 @@ async function actor(request, env) {
   }
   const googleUser = await googleActor(request, env);
   if (googleUser) return googleUser;
+  if (env.SELF_HOSTED) return null;
   if (!request.headers.get('oai-authenticated-user-id')) return null;
   const email = normalizeEmail(request.headers.get('oai-authenticated-user-email'));
   if (!email) return null;
+  const isOwner = email === normalizeEmail(env.OWNER_EMAIL);
+  if (!isOwner && !await siteAssignment(env.DB, email)) return null;
   const rawName = request.headers.get('oai-authenticated-user-full-name');
   let name = rawName || email.split('@')[0];
   if (rawName && request.headers.get('oai-authenticated-user-full-name-encoding') === 'percent-encoded-utf-8') {
     try { name = decodeURIComponent(rawName); } catch { name = email.split('@')[0]; }
   }
-  return actorFor(env, email, name, 'chatgpt');
+  return actorFor(email, name, 'chatgpt', isOwner ? 'owner' : 'manager');
 }
 
 function base64url(bytes) {
@@ -94,14 +125,25 @@ async function googleActor(request, env) {
   if (!validToken(token) || !googleReady(env, new URL(request.url))) return null;
   const session = await q(env.DB, 'SELECT email, name FROM google_sessions WHERE token_hash=? AND expires_at>?',
     await digest(token), nowSeconds()).first();
-  return session ? actorFor(env, session.email, session.name, 'google') : null;
+  if (!session) return null;
+  const role = await googleRole(env, session.email);
+  return role ? actorFor(session.email, session.name, 'google', role) : null;
+}
+
+async function revokeGoogleSession(request, db) {
+  const token = readCookie(request, googleSessionCookie);
+  if (validToken(token)) await q(db, 'DELETE FROM google_sessions WHERE token_hash=?', await digest(token)).run();
 }
 
 async function googleSigningKey(kid) {
   if (!googleKeys || Date.now() >= googleKeys.expires || !googleKeys.keys.some((key) => key.kid === kid)) {
-    const response = await fetch('https://www.googleapis.com/oauth2/v3/certs', { redirect: 'error' });
-    if (!response.ok) throw new Error('Google signing keys unavailable');
-    const { keys } = await response.json();
+    const response = await fetch('https://www.googleapis.com/oauth2/v3/certs', {
+      redirect: 'manual', signal: AbortSignal.timeout(10000),
+    }).catch(() => { throw new Error('keys_network'); });
+    if (!response.ok) throw new Error('keys_http');
+    const payload = await response.json().catch(() => null);
+    if (!Array.isArray(payload?.keys)) throw new Error('keys_response');
+    const keys = payload.keys;
     const ttl = Number(response.headers.get('cache-control')?.match(/max-age=(\d+)/)?.[1] || 60);
     googleKeys = { keys, expires: Date.now() + Math.min(ttl, 86400) * 1000 };
   }
@@ -110,21 +152,21 @@ async function googleSigningKey(kid) {
 
 async function verifiedGoogleProfile(token, audience, nonce) {
   const parts = typeof token === 'string' && token.length <= 12000 ? token.split('.') : [];
-  if (parts.length !== 3) throw new Error('Invalid ID token');
+  if (parts.length !== 3) throw new Error('invalid_id_token');
   const [header, payload, signature] = parts;
   const { alg, kid } = JSON.parse(decoder.decode(fromBase64url(header)));
-  if (alg !== 'RS256' || typeof kid !== 'string') throw new Error('Invalid ID token header');
+  if (alg !== 'RS256' || typeof kid !== 'string') throw new Error('invalid_id_token_header');
   const jwk = await googleSigningKey(kid);
-  if (!jwk) throw new Error('Unknown signing key');
+  if (!jwk) throw new Error('unknown_signing_key');
   const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
   const verified = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, fromBase64url(signature), encoder.encode(header + '.' + payload));
-  if (!verified) throw new Error('Invalid signature');
+  if (!verified) throw new Error('invalid_signature');
   const claims = JSON.parse(decoder.decode(fromBase64url(payload)));
   const { iss, aud, azp, exp, iat, sub } = claims;
   const now = nowSeconds();
   if (!['https://accounts.google.com', 'accounts.google.com'].includes(iss) || aud !== audience || (azp && azp !== audience)
       || claims.nonce !== nonce || !Number.isSafeInteger(exp) || exp <= now || !Number.isSafeInteger(iat) || iat > now + 60
-      || typeof sub !== 'string' || !sub) throw new Error('Invalid ID token claims');
+      || typeof sub !== 'string' || !sub) throw new Error('invalid_claims');
   const email = typeof claims.email === 'string' ? normalizeEmail(claims.email) : '';
   // Site access is granted by email, so use addresses Google currently controls.
   const googleManaged = email.endsWith('@gmail.com') || (typeof claims.hd === 'string' && !!claims.hd);
@@ -135,48 +177,66 @@ async function verifiedGoogleProfile(token, audience, nonce) {
 
 async function googleAuth(request, url, env) {
   const path = url.pathname;
+  const clearSession = authCookie(googleSessionCookie, '', 0);
   if (path === '/auth/signout' && request.method === 'POST') {
     if (request.headers.get('origin') !== url.origin) fail(403, 'Откройте панель и повторите действие.');
-    const token = readCookie(request, googleSessionCookie);
-    if (validToken(token)) await q(env.DB, 'DELETE FROM google_sessions WHERE token_hash=?', await digest(token)).run();
-    const target = request.headers.get('oai-authenticated-user-id') ? '/signout-with-chatgpt?return_to=%2F' : '/admin';
-    return redirect(target, [authCookie(googleSessionCookie, '', 0)]);
+    await revokeGoogleSession(request, env.DB);
+    const target = !env.SELF_HOSTED && request.headers.get('oai-authenticated-user-id')
+      ? '/signout-with-chatgpt?return_to=%2F' : '/admin';
+    return redirect(target, [clearSession]);
   }
   if (request.method !== 'GET' || !['/auth/google', googleReturnPath].includes(path)) fail(404, 'Раздел не найден.');
   if (!googleReady(env, url)) return redirect('/admin?google=unavailable');
+  const clientId = env.GOOGLE_CLIENT_ID.trim();
   const redirectUri = new URL(googleReturnPath, url.origin).href;
   if (path === '/auth/google') {
     const state = randomToken();
     const nonce = randomToken();
     const verifier = randomToken();
     const auth = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    auth.search = new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID, redirect_uri: redirectUri, response_type: 'code',
+    auth.search = new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri, response_type: 'code',
       scope: 'openid email profile', state, nonce, code_challenge: await digest(verifier), code_challenge_method: 'S256', prompt: 'select_account' });
     return redirect(auth.href, [authCookie(googleFlowCookie, [state, nonce, verifier].join('.'), googleFlowAge)]);
   }
   const clearFlow = authCookie(googleFlowCookie, '', 0);
-  const abort = (reason) => redirect('/admin?google=' + reason, [clearFlow]);
+  const abort = (reason, cookies = []) => redirect('/admin?google=' + reason, [clearFlow, ...cookies]);
   const [state, nonce, verifier, extra] = (readCookie(request, googleFlowCookie) || '').split('.');
   if (extra !== undefined || ![state, nonce, verifier].every(validToken) || state !== url.searchParams.get('state')) return abort('expired');
   if (url.searchParams.has('error')) return abort('cancelled');
   const code = url.searchParams.get('code');
   if (!code || code.length > 4096) return abort('expired');
+  let response;
+  try {
+    response = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(10000),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'authorization_code', code, client_id: clientId,
+        client_secret: env.GOOGLE_CLIENT_SECRET.trim(), code_verifier: verifier, redirect_uri: redirectUri }).toString(),
+    });
+  } catch (error) {
+    console.warn('Google OAuth failed: token_network ' + googleNetworkReason(error));
+    return abort('failed');
+  }
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const reason = googleProviderErrors.has(payload?.error) ? payload.error : 'unknown';
+    console.warn('Google OAuth failed: token_http ' + response.status + ' ' + reason);
+    return abort('failed');
+  }
   let profile;
   try {
-    const response = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', redirect: 'error',
-      body: new URLSearchParams({ grant_type: 'authorization_code', code, client_id: env.GOOGLE_CLIENT_ID,
-        client_secret: env.GOOGLE_CLIENT_SECRET, code_verifier: verifier, redirect_uri: redirectUri }) });
-    if (!response.ok) return abort('failed');
-    const { id_token: token } = await response.json();
-    profile = await verifiedGoogleProfile(token, env.GOOGLE_CLIENT_ID, nonce);
-  } catch {
+    profile = await verifiedGoogleProfile(payload?.id_token, clientId, nonce);
+  } catch (error) {
+    const reason = googleTokenFailures.has(error?.message) ? error.message : 'id_token_processing';
+    console.warn('Google OAuth failed: ' + reason);
     return abort('failed');
   }
   if (!profile) return abort('email');
   const { email, name } = profile;
   const db = env.DB;
-  if (email !== normalizeEmail(env.OWNER_EMAIL) && !await q(db, 'SELECT 1 FROM site_admins WHERE email=? LIMIT 1', email).first()) {
-    return abort('denied');
+  if (!await googleRole(env, email)) {
+    await revokeGoogleSession(request, db);
+    return abort(email === normalizeEmail(env.OWNER_EMAIL) ? 'owner' : 'denied', [clearSession]);
   }
   const token = randomToken();
   await q(db, 'DELETE FROM google_sessions WHERE expires_at<=?', nowSeconds()).run();
@@ -218,9 +278,9 @@ function parseBody(raw) {
   fail(400, 'Не удалось прочитать данные.');
 }
 
-async function body(request) {
+async function body(request, limit = 16384) {
   if (!request.headers.get('content-type')?.startsWith('application/json')) fail(415, 'Ожидался формат JSON.');
-  const bytes = await readBodyBytes(request, 16384, 'Слишком большой запрос.');
+  const bytes = await readBodyBytes(request, limit, 'Слишком большой запрос.');
   return parseBody(decoder.decode(bytes));
 }
 
@@ -235,14 +295,52 @@ function address(data, key, image = false) {
   const value = field(data, key, 2048);
   if (!value) return '';
   if (image && value === '/assets/moka.jpg') return value;
+  const labels = { logo_url: 'Логотип', cover_url: 'Обложка', maps_url: 'Карты',
+    telegram_url: 'Telegram', instagram_url: 'Instagram', vk_url: 'ВКонтакте' };
   try {
-    const url = new URL(value);
-    if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password) return url.href;
+    const hasProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(value);
+    const url = new URL(hasProtocol ? value : 'https://' + value);
+    if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password &&
+        (hasProtocol || /^[^/\s]+\.[^/\s]+/.test(value))) return url.href;
   } catch { /* invalid URL */ }
-  fail(400, 'Укажите полную ссылку, начинающуюся с https://.');
+  fail(400, 'Проверьте ссылку в поле «' + labels[key] + '».');
 }
 
-function siteFields(data) {
+function siteLinks(data, site) {
+  const visible = data.link_visibility;
+  if (visible === undefined) {
+    return { ...Object.fromEntries(contactColumns.map((key) => [key, address(data, key)])),
+      website_url: null, show_website: null, hidden_links: null, show_maps: null };
+  }
+  if (!visible || [...contactColumns, 'website_url'].some((key) => typeof visible[key] !== 'boolean')) {
+    fail(400, 'Проверьте, какие ссылки включены.');
+  }
+  const contacts = Object.fromEntries(contactColumns.map((key) => {
+    const value = visible[key] ? address(data, key) : site?.[key] ?? '';
+    if (visible[key] && !value) fail(400, 'Введите адрес для каждой включённой ссылки.');
+    return [key, value];
+  }));
+  const website = visible.website_url ? httpsLink(field(data, 'website_url', 2048)) : null;
+  if (visible.website_url && !website) fail(400, 'Введите полную HTTPS-ссылку на официальный сайт.');
+  return { ...contacts, website_url: website?.href ?? null, show_website: Number(visible.website_url),
+    hidden_links: JSON.stringify(contactColumns.filter((key) => !visible[key])), show_maps: Number(visible.maps_url) };
+}
+
+function guestInfoFields(data) {
+  const show_hours = data.show_hours == null ? null : optionalFlag(data, 'show_hours');
+  const show_wifi = data.show_wifi == null ? null : optionalFlag(data, 'show_wifi');
+  const hours = show_hours === 0 || data.opening_hours === undefined ? null : field(data, 'opening_hours', 240);
+  const wifiName = show_wifi === 0 || data.wifi_name === undefined ? null : field(data, 'wifi_name', 80);
+  const wifiPassword = show_wifi === 0 ? undefined : data.wifi_password;
+  if (wifiPassword !== undefined && (typeof wifiPassword !== 'string' || wifiPassword.length > 128)) {
+    fail(400, 'Проверьте гостевой пароль Wi-Fi.');
+  }
+  if (show_hours && !hours) fail(400, 'Укажите время работы.');
+  if (show_wifi && !wifiName && !wifiPassword) fail(400, 'Укажите название гостевой сети или пароль Wi-Fi.');
+  return { opening_hours: hours, wifi_name: wifiName, wifi_password: wifiPassword ?? null, show_hours, show_wifi };
+}
+
+function siteFields(data, site) {
   const name = field(data, 'name', 80, true);
   const type = field(data, 'type', 50, true);
   const description = field(data, 'description', 260);
@@ -250,8 +348,10 @@ function siteFields(data) {
   const currency = field(data, 'currency', 3, true);
   const status = field(data, 'status', 8, true);
   if (!themes.includes(theme) || !currencies.includes(currency) || !['draft', 'live'].includes(status)) fail(400, 'Проверьте настройки страницы.');
-  return [name, type, description, theme, address(data, 'logo_url', true), address(data, 'cover_url', true),
-    currency, status, ...Object.values(actionColumns).map((key) => address(data, key))];
+  return {
+    name, type, description, theme, logo_url: address(data, 'logo_url', true), cover_url: address(data, 'cover_url', true),
+    currency, status, ...siteLinks(data, site), ...guestInfoFields(data),
+  };
 }
 
 function itemFields(data) {
@@ -271,37 +371,55 @@ function photoFormat(bytes) {
   return null;
 }
 
-async function itemInput(request) {
-  const type = request.headers.get('content-type');
-  if (!type?.toLowerCase().startsWith('multipart/form-data;')) {
-    const data = await body(request);
-    if (data.remove_photo != null && typeof data.remove_photo !== 'boolean') fail(400, 'Проверьте настройки фотографии.');
-    return { fields: itemFields(data), removePhoto: data.remove_photo === true, photo: null };
-  }
-  const tooLarge = 'Фото для загрузки должно быть не больше 6 МБ.';
-  const raw = await readBodyBytes(request, photoLimit + 32768, tooLarge);
+const isPhotoForm = (request) => request.headers.get('content-type')?.toLowerCase().startsWith('multipart/form-data;');
+const photoTooLarge = 'Фото после уменьшения должно быть не больше 6 МБ.';
+
+async function photoForm(request, slots) {
+  const raw = await readBodyBytes(request, photoLimit * slots + 32768, photoTooLarge);
   let form;
   try {
-    form = await new Response(raw, { headers: { 'Content-Type': type } }).formData();
+    form = await new Response(raw, { headers: { 'Content-Type': request.headers.get('content-type') } }).formData();
   } catch {
-    fail(400, 'Не удалось прочитать фотографию.');
+    fail(400, 'Не удалось прочитать загрузку.');
   }
   const payload = form.get('payload');
-  const photo = form.get('photo');
-  if (typeof payload !== 'string' || payload.length > 16384 || !(photo instanceof File) || !photo.size) {
-    fail(400, 'Выберите фотографию и заполните данные позиции.');
-  }
-  if (photo.size > photoLimit) fail(413, tooLarge);
-  const fields = itemFields(parseBody(payload));
+  if (typeof payload !== 'string' || payload.length > 16384) fail(400, 'Проверьте данные формы.');
+  return { data: parseBody(payload), form };
+}
+
+async function readPhoto(photo) {
+  if (photo == null) return null;
+  if (!(photo instanceof File) || !photo.size) fail(400, 'Выберите фотографию.');
+  if (photo.size > photoLimit) fail(413, photoTooLarge);
   const bytes = new Uint8Array(await photo.arrayBuffer());
   const extension = photoFormat(bytes);
   if (!extension) fail(415, 'Выберите фотографию в формате JPEG, PNG или WebP.');
-  return { fields, removePhoto: false, photo: { bytes, extension } };
+  return { bytes, extension };
+}
+
+async function itemInput(request) {
+  if (isPhotoForm(request)) {
+    const { data, form } = await photoForm(request, 1);
+    const photo = await readPhoto(form.get('photo'));
+    if (!photo) fail(400, 'Выберите фотографию и заполните данные позиции.');
+    return { fields: itemFields(data), removePhoto: false, photo };
+  }
+  const data = await body(request);
+  if (data.remove_photo != null && typeof data.remove_photo !== 'boolean') fail(400, 'Проверьте настройки фотографии.');
+  return { fields: itemFields(data), removePhoto: data.remove_photo === true, photo: null };
+}
+
+function photoUrl(prefix, key, preview) {
+  return key ? prefix + key + (preview ? '?preview=1' : '') : null;
 }
 
 function itemWithPhoto({ photo_key: key, ...item }, preview = false) {
-  const photo_url = key ? photoPrefix + key + (preview ? '?preview=1' : '') : null;
-  return { ...item, photo_url };
+  return { ...item, photo_url: photoUrl(photoPrefix, key, preview) };
+}
+
+function siteWithPhotos({ logo_key, cover_key, menu_order_version, hidden_links, ...site }, preview = false) {
+  return { ...site, hidden_links: JSON.parse(hidden_links ?? '[]'), logo_photo_url: photoUrl(sitePhotoPrefix, logo_key, preview),
+    cover_photo_url: photoUrl(sitePhotoPrefix, cover_key, preview) };
 }
 
 async function uploadPhoto(env, photo) {
@@ -312,31 +430,197 @@ async function uploadPhoto(env, photo) {
   return key;
 }
 
-async function removePhotoIfUnused(env, key) {
+async function removePhotoIfUnused(env, key, sitePhoto = false) {
   if (!key || !env.BUCKET) return;
   try {
-    if (!await q(env.DB, 'SELECT 1 FROM items WHERE photo_key=?', key).first()) await env.BUCKET.delete(key);
+    const statement = sitePhoto ? q(env.DB, 'SELECT 1 FROM sites WHERE logo_key=? OR cover_key=?', key, key) :
+      q(env.DB, 'SELECT 1 FROM items WHERE photo_key=?', key);
+    if (!await statement.first()) await env.BUCKET.delete(key);
   } catch (error) {
-    console.error('Failed to remove unused menu photo', error);
+    console.error('Failed to remove unused photo', error);
   }
+}
+
+async function saveSite(request, env, site) {
+  const db = env.DB;
+  const {data, form} = isPhotoForm(request) ? await photoForm(request, 2) : { data: await body(request) };
+  const slug = site?.slug ?? field(data, 'slug', 48, true).toLowerCase();
+  if (!site) {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || reserved.has(slug)) fail(400, 'Используйте латиницу, цифры и дефисы в адресе.');
+    if (await findSite(db, slug)) fail(409, 'Этот адрес уже используется.');
+  }
+  const fields = siteFields(data, site);
+  const photos = {};
+  const keys = {};
+  const uploaded = [];
+  for (const slot of sitePhotoSlots) {
+    const remove = data['remove_' + slot + '_photo'];
+    if (remove != null && typeof remove !== 'boolean') fail(400, 'Проверьте настройки изображений.');
+    photos[slot] = await readPhoto(form?.get(slot + '_photo'));
+    const linkChanged = fields[slot + '_url'] && fields[slot + '_url'] !== site?.[slot + '_url'];
+    keys[slot] = remove || linkChanged ? null : site?.[slot + '_key'] ?? null;
+  }
+  try {
+    for (const slot of sitePhotoSlots) {
+      if (photos[slot]) {
+        keys[slot] = await uploadPhoto(env, photos[slot]);
+        uploaded.push(keys[slot]);
+      }
+    }
+    if (site) {
+      const result = await q(db, `UPDATE sites SET name=?, type=?, description=?, theme=?, logo_url=?, cover_url=?, currency=?, status=?,
+        maps_url=?, telegram_url=?, instagram_url=?, vk_url=?, website_url=COALESCE(?, website_url),
+        show_website=COALESCE(?, show_website), hidden_links=COALESCE(?, hidden_links), show_maps=COALESCE(?, show_maps),
+        opening_hours=COALESCE(?, opening_hours), wifi_name=COALESCE(?, wifi_name), wifi_password=COALESCE(?, wifi_password),
+        show_hours=COALESCE(?, show_hours), show_wifi=COALESCE(?, show_wifi), logo_key=?, cover_key=?
+        WHERE id=? AND logo_key IS ? AND cover_key IS ? AND theme=COALESCE(?, theme)`,
+        ...Object.values(fields), keys.logo, keys.cover, site.id, site.logo_key, site.cover_key,
+        data.previous_theme === undefined ? null : field(data, 'previous_theme', 20)).run();
+      if (!result.meta.changes) fail(409, 'Оформление уже изменилось. Обновите страницу и повторите действие.');
+    } else {
+      await q(db, `INSERT INTO sites (id, slug, name, type, description, theme, logo_url, cover_url, currency, status,
+        maps_url, telegram_url, instagram_url, vk_url, website_url, show_website, hidden_links, show_maps,
+        opening_hours, wifi_name, wifi_password, show_hours, show_wifi, nfc_key, created_at, logo_key, cover_key)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ''), COALESCE(?, 0), COALESCE(?, '[]'), COALESCE(?, 0),
+          COALESCE(?, ''), COALESCE(?, ''), COALESCE(?, ''), ?, ?, ?, ?, ?, ?)`,
+        newId(), slug, ...Object.values(fields), newId(), new Date().toISOString(), keys.logo, keys.cover).run();
+    }
+  } catch (error) {
+    await Promise.all(uploaded.map((key) => removePhotoIfUnused(env, key, true)));
+    if (/UNIQUE constraint failed: sites.slug/.test(error.message)) fail(409, 'Этот адрес уже используется.');
+    throw error;
+  }
+  if (site) {
+    await Promise.all(sitePhotoSlots.map((slot) => keys[slot] !== site[slot + '_key'] &&
+      removePhotoIfUnused(env, site[slot + '_key'], true)));
+  }
+  return siteWithPhotos(await findSite(db, slug), true);
+}
+
+function expectedVersion(request) {
+  const value = request.headers.get('if-match');
+  if (value === null) fail(428, 'Обновите страницу панели и повторите действие.');
+  const version = Number(/^"([1-9][0-9]*)"$/.exec(value)?.[1]);
+  if (!Number.isSafeInteger(version)) fail(400, 'Некорректная версия меню. Обновите страницу.');
+  return version;
+}
+
+function optionalFlag(data, key) {
+  if (data[key] === undefined) return null;
+  if (typeof data[key] !== 'boolean') fail(400, 'Проверьте настройку видимости кнопки.');
+  return Number(data[key]);
+}
+
+function httpsLink(value) {
+  try {
+    const link = new URL(value);
+    if (link.protocol === 'https:' && !link.username && !link.password && link.href.length <= 2048) return link;
+  } catch { /* invalid URL */ }
+  return null;
+}
+
+async function saveMenuLink(request, url, db, site) {
+  const data = await body(request);
+  const value = field(data, 'menu_url', 2048);
+  const destination = httpsLink(value);
+  if (value && (!destination || destination.origin === url.origin)) {
+    fail(400, 'Введите полную HTTPS-ссылку на внешнее меню.');
+  }
+  const visible = optionalFlag(data, 'show_menu');
+  const previous = optionalFlag(data, 'previous_show_menu');
+  if (!await q(db, `UPDATE sites SET menu_url=?, show_menu=COALESCE(?, show_menu)
+    WHERE id=? AND menu_url=? AND show_menu=COALESCE(?, show_menu) RETURNING id`,
+    destination?.href ?? '', visible, site.id, field(data, 'previous_url', 2048), previous).first()) {
+    fail(412, 'Настройки меню уже изменились. Откройте их заново.');
+  }
+}
+
+async function saveWebsiteButton(request, db, site) {
+  const data = await body(request);
+  const value = field(data, 'website_url', 2048);
+  const destination = httpsLink(value);
+  const visible = optionalFlag(data, 'show_website');
+  const previous = optionalFlag(data, 'previous_show_website');
+  if ((value || visible) && !destination) fail(400, 'Введите полную HTTPS-ссылку на официальный сайт.');
+  if (visible === null || previous === null) fail(400, 'Проверьте настройку видимости кнопки.');
+  if (!await q(db, `UPDATE sites SET website_url=?, show_website=?
+    WHERE id=? AND website_url=? AND show_website=? RETURNING id`,
+    destination?.href ?? '', visible, site.id, field(data, 'previous_url', 2048), previous).first()) {
+    fail(412, 'Настройки кнопки уже изменились. Повторите действие на обновлённой странице.');
+  }
+}
+
+async function importMenu(request, db, site) {
+  const { currency, items } = await body(request, 512 * 1024);
+  if (currency !== undefined && currency !== site.currency) fail(400, 'Валюта в файле должна совпадать с валютой мини-сайта: ' + site.currency + '.');
+  if (!Array.isArray(items) || items.length < 1 || items.length > 500) {
+    fail(400, 'В файле должен быть список items от 1 до 500 позиций.');
+  }
+  const fields = items.map((item, index) => {
+    try {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) fail(400, 'Ожидалась позиция меню.');
+      const value = typeof item.price === 'number' ? String(item.price) : item.price;
+      if (typeof value !== 'string' || !/^\d{1,6}(?:[.,]\d{1,2})?$/.test(value.trim())) {
+        fail(400, 'Укажите цену с точностью до двух знаков.');
+      }
+      return itemFields({ ...item, price: Math.round(Number(value.replace(',', '.')) * 100),
+        available: item.available === undefined ? true : item.available });
+    } catch (error) {
+      if (error.status !== 400) throw error;
+      fail(400, 'Позиция №' + (index + 1) + '. ' + error.message);
+    }
+  });
+  const batch = await digest(site.id + '\0' + JSON.stringify(fields));
+  const start = Date.now();
+  const rows = fields.map((row, index) => [batch + '-' + index, ...row, new Date(start + index).toISOString()]);
+  const added = await all(db, `INSERT INTO items (site_id, id, name, category, description, price, available, created_at)
+    SELECT ?, json_extract(value, '$[0]'), json_extract(value, '$[1]'), json_extract(value, '$[2]'),
+      json_extract(value, '$[3]'), json_extract(value, '$[4]'), json_extract(value, '$[5]'), json_extract(value, '$[6]')
+    FROM json_each(?) WHERE 1 ON CONFLICT(id) DO NOTHING RETURNING id`, site.id, JSON.stringify(rows));
+  return { added: added.length, skipped: rows.length - added.length };
+}
+
+async function moveItem(request, db, siteId) {
+  const version = expectedVersion(request);
+  const data = await body(request);
+  const id = field(data, 'id', 100, true);
+  const target = field(data, 'target', 100, true);
+  const result = await q(db, `WITH positions AS MATERIALIZED (
+    SELECT id, ROW_NUMBER() OVER (ORDER BY ${itemOrder}) AS position FROM items
+    WHERE site_id=? AND (SELECT menu_order_version FROM sites WHERE id=?)=?
+  ), move AS (
+    SELECT source.position AS start, destination.position AS finish
+    FROM positions source JOIN positions destination ON destination.id=? WHERE source.id=?
+  ), ranks AS MATERIALIZED (
+    SELECT positions.id, CASE
+      WHEN position=start THEN finish
+      WHEN position>start AND position<=finish THEN position-1
+      WHEN position>=finish AND position<start THEN position+1
+      ELSE position END AS new_position
+    FROM positions CROSS JOIN move
+  )
+  UPDATE items SET sort_order=ranks.new_position FROM ranks
+  WHERE items.site_id=? AND items.id=ranks.id`, siteId, siteId, version, target, id, siteId).run();
+  if (!result.meta.changes) fail(412, 'Список или порядок позиций изменился. Повторите перенос в обновлённом меню.');
 }
 
 async function editItem(request, env, site, id) {
   const db = env.DB;
+  const version = expectedVersion(request);
   const { fields, photo, removePhoto } = await itemInput(request);
   if (!photo && !removePhoto) {
-    const result = await q(db, 'UPDATE items SET name=?, category=?, description=?, price=?, available=? WHERE site_id=? AND id=?',
-      ...fields, site.id, id).run();
-    if (!result.meta.changes) fail(404, 'Позиция не найдена.');
+    const result = await q(db, `UPDATE items SET name=?, category=?, description=?, price=?, available=?, edit_version=edit_version+1
+      WHERE site_id=? AND id=? AND edit_version=?`, ...fields, site.id, id, version).run();
+    if (!result.meta.changes) fail(412, itemChanged);
     return;
   }
-  const current = await q(db, 'SELECT photo_key FROM items WHERE site_id=? AND id=?', site.id, id).first();
-  if (!current) fail(404, 'Позиция не найдена.');
+  const current = await q(db, 'SELECT photo_key FROM items WHERE site_id=? AND id=? AND edit_version=?', site.id, id, version).first();
+  if (!current) fail(412, itemChanged);
   const key = await uploadPhoto(env, photo);
   try {
-    const result = await q(db, `UPDATE items SET name=?, category=?, description=?, price=?, available=?, photo_key=?
-      WHERE site_id=? AND id=? AND photo_key IS ?`, ...fields, key, site.id, id, current.photo_key).run();
-    if (!result.meta.changes) fail(409, 'Позиция изменилась. Откройте её заново.');
+    const result = await q(db, `UPDATE items SET name=?, category=?, description=?, price=?, available=?, photo_key=?, edit_version=edit_version+1
+      WHERE site_id=? AND id=? AND edit_version=?`, ...fields, key, site.id, id, version).run();
+    if (!result.meta.changes) fail(412, itemChanged);
   } catch (error) {
     await removePhotoIfUnused(env, key);
     throw error;
@@ -468,13 +752,16 @@ async function tipSummary(db, filter, args, selectedId, start, end) {
   return { counts, paid };
 }
 
-async function servePhoto(request, url, env) {
-  const key = url.pathname.slice(photoPrefix.length);
+async function servePhoto(request, url, env, prefix) {
+  const key = url.pathname.slice(prefix.length);
   const format = key.match(photoKeyPattern)?.[1];
   const notFound = () => new Response(null, { status: 404, headers: { 'Cache-Control': 'no-store' } });
   if (!format || !env.BUCKET) return notFound();
-  const item = await q(env.DB, `SELECT s.id AS site_id, s.status, i.available FROM items i
-    JOIN sites s ON s.id=i.site_id WHERE i.photo_key=?`, key).first();
+  const statement = prefix === sitePhotoPrefix
+    ? q(env.DB, 'SELECT id AS site_id, status, 1 AS available FROM sites WHERE logo_key=? OR cover_key=?', key, key)
+    : q(env.DB, `SELECT s.id AS site_id, s.status, i.available FROM items i
+      JOIN sites s ON s.id=i.site_id WHERE i.photo_key=?`, key);
+  const item = await statement.first();
   if (!item) return notFound();
   const preview = url.searchParams.get('preview') === '1';
   if (preview) {
@@ -502,9 +789,22 @@ async function allowedSite(db, user, slug) {
   return site;
 }
 
+function siteScope(user) {
+  return user.role === 'owner' ? { filter: '', args: [] } : {
+    filter: ' WHERE EXISTS (SELECT 1 FROM site_admins a WHERE a.site_id = s.id AND a.email = ?)',
+    args: [user.email],
+  };
+}
+
+async function listSites(db, user) {
+  const { filter, args } = siteScope(user);
+  const sites = await all(db, `SELECT s.slug, s.name, s.type, s.theme, s.status, s.logo_url, s.logo_key
+    FROM sites s${filter} ORDER BY s.created_at DESC, s.name`, ...args);
+  return { user, sites: sites.map((site) => siteWithPhotos(site, site.status === 'draft')) };
+}
+
 async function overview(db, user, url) {
-  const filter = user.role === 'owner' ? '' : ' WHERE EXISTS (SELECT 1 FROM site_admins a WHERE a.site_id = s.id AND a.email = ?)';
-  const args = user.role === 'owner' ? [] : [user.email];
+  const { filter, args } = siteScope(user);
   const days = ['7', '14', '30'].includes(url.searchParams.get('days')) ? Number(url.searchParams.get('days')) : 7;
   const start = todayOffset(1 - days);
   const previous = todayOffset(1 - 2 * days);
@@ -535,14 +835,58 @@ async function overview(db, user, url) {
     total[key] += row.count;
   }
   const tips = await tipSummary(db, filter, args, selectedId, start, dayKey());
-  return { user, days, current, comparison, series, tips, sites: sites.map((site) => ({ ...site, ...summaries.get(site.id) })) };
+  return { user, days, current, comparison, series, tips,
+    sites: sites.map((site) => ({ ...siteWithPhotos(site, site.status === 'draft'), ...summaries.get(site.id) })) };
+}
+
+async function recordFeedback(request, url, db, slug) {
+  if (request.headers.get('origin') !== url.origin) fail(403, 'Откройте форму на странице заведения.');
+  const site = await findSite(db, slug);
+  if (site?.status !== 'live') fail(404, 'Страница заведения недоступна.');
+  const data = await body(request, 8192);
+  if (typeof data.id !== 'string' || !uuidPattern.test(data.id) || ![1, 2, 3].includes(data.rating)) {
+    fail(400, 'Укажите оценку и заполните отзыв.');
+  }
+  const comment = field(data, 'comment', 2000, true);
+  const name = field(data, 'guest_name', 80);
+  const place = field(data, 'guest_place', 100);
+  const source = url.searchParams.get('nfc') === site.nfc_key ? 'nfc' : 'direct';
+  await q(db, `INSERT INTO site_feedback (site_id, id, rating, comment, guest_name, guest_place, source, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(site_id, id) DO NOTHING`,
+    site.id, data.id, data.rating, comment, name, place, source, new Date().toISOString()).run();
+  return json({ ok: true }, 201);
+}
+
+async function feedbackInbox(db, id, params) {
+  const rating = params.get('rating');
+  const status = params.get('status');
+  const requestedPage = Number(params.get('page'));
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 && requestedPage < 100000 ? requestedPage : 1;
+  const sorts = {
+    recent: 'created_at DESC, id DESC',
+    oldest: 'created_at ASC, id ASC',
+    lowest: 'rating ASC, created_at DESC, id DESC',
+    highest: 'rating DESC, created_at DESC, id DESC',
+  };
+  const sort = params.get('sort');
+  const clauses = ['site_id=?'];
+  const args = [id];
+  if (['1', '2', '3'].includes(rating)) { clauses.push('rating=?'); args.push(Number(rating)); }
+  if (status === 'unread' || status === 'read') clauses.push(status === 'unread' ? 'read_at IS NULL' : 'read_at IS NOT NULL');
+  const rows = await all(db, `SELECT id, rating, comment, guest_name, guest_place, source, created_at, read_at FROM site_feedback
+    WHERE ${clauses.join(' AND ')} ORDER BY ${Object.hasOwn(sorts, sort) ? sorts[sort] : sorts.recent} LIMIT 25 OFFSET ?`,
+    ...args, (page - 1) * 24);
+  return json({ reviews: rows.slice(0, 24), page, hasMore: rows.length > 24 });
 }
 
 async function api(request, url, env) {
   const db = env.DB;
+  const feedback = url.pathname.match(/^\/api\/feedback\/([a-z0-9-]+)$/);
+  if (feedback && request.method === 'POST') return recordFeedback(request, url, db, feedback[1]);
   const user = await actor(request, env);
   if (url.pathname === '/api/session' && request.method === 'GET') return json({
     user, ownerConfigured: !!env.OWNER_EMAIL || !!env.DEMO_MODE, googleAvailable: googleReady(env, url),
+    selfHosted: !!env.SELF_HOSTED,
   });
   if (!user) fail(401, 'Войдите в панель управления.');
   const method = request.method;
@@ -550,44 +894,66 @@ async function api(request, url, env) {
     if (request.headers.get('origin') !== url.origin) fail(403, 'Откройте панель и повторите действие.');
   }
   if (url.pathname === '/api/overview' && method === 'GET') return json(await overview(db, user, url));
+  if (url.pathname === '/api/sites' && method === 'GET') return json(await listSites(db, user));
   if (url.pathname === '/api/sites' && method === 'POST') {
     if (user.role !== 'owner') fail(403, 'Создавать сайты может владелец.');
-    const data = await body(request);
-    const slug = field(data, 'slug', 48, true).toLowerCase();
-    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || reserved.has(slug)) fail(400, 'Используйте латиницу, цифры и дефисы в адресе.');
-    if (await findSite(db, slug)) fail(409, 'Этот адрес уже используется.');
-    try {
-      await q(db, `INSERT INTO sites (id, slug, name, type, description, theme, logo_url, cover_url, currency, status,
-        maps_url, telegram_url, instagram_url, vk_url, nfc_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        newId(), slug, ...siteFields(data), newId(), new Date().toISOString()).run();
-    } catch (error) {
-      if (/UNIQUE constraint failed: sites.slug/.test(error.message)) fail(409, 'Этот адрес уже используется.');
-      throw error;
-    }
-    return json({ site: await findSite(db, slug) }, 201);
+    return json({ site: await saveSite(request, env) }, 201);
   }
-  const route = url.pathname.match(/^\/api\/sites\/([a-z0-9-]+)(?:\/(items|admins|tips)(?:\/([^/]+))?)?$/);
+  const route = url.pathname.match(/^\/api\/sites\/([a-z0-9-]+)(?:\/(items|admins|tips|website|feedback|theme)(?:\/([^/]+))?)?$/);
   if (!route) fail(404, 'Раздел не найден.');
   const [, slug, section, key] = route;
   const site = await allowedSite(db, user, slug);
   if (!section && method === 'GET') {
-    const items = await all(db, 'SELECT * FROM items WHERE site_id = ? ORDER BY created_at, name', site.id);
+    // Read the position list and its order version from the same snapshot.
+    const rows = await all(db, `SELECT items.*, sites.menu_order_version FROM sites
+      LEFT JOIN items ON items.site_id=sites.id WHERE sites.id=? ORDER BY ${itemOrder}`, site.id);
+    if (!rows.length) fail(404, 'Сайт не найден или недоступен.');
+    const items = rows.filter((row) => row.id !== null).map(({ menu_order_version, ...item }) => itemWithPhoto(item, true));
     const admins = user.role === 'owner' ? await all(db, 'SELECT email FROM site_admins WHERE site_id = ? ORDER BY email', site.id) : [];
     const tips = user.role === 'owner' ? getTipForm(await tipSettings(db, site.id), env) : null;
-    return json({ site, items: items.map((item) => itemWithPhoto(item, true)), admins, tips });
+    const unreadFeedback = (await q(db, 'SELECT COUNT(*) AS count FROM site_feedback WHERE site_id=? AND read_at IS NULL', site.id).first()).count;
+    return json({ user, site: siteWithPhotos(site, true), items, menuOrderVersion: rows[0].menu_order_version, admins, tips, unreadFeedback });
+  }
+  if (section === 'feedback' && !key && method === 'GET') return feedbackInbox(db, site.id, url.searchParams);
+  if (section === 'feedback' && key && method === 'PUT') {
+    if (!uuidPattern.test(key) || !await q(db, `UPDATE site_feedback SET read_at=COALESCE(read_at, ?)
+      WHERE site_id=? AND id=? RETURNING id`, new Date().toISOString(), site.id, key).first()) fail(404, 'Отзыв не найден.');
+    return json({ ok: true });
   }
   if (section === 'tips' && !key && method === 'PUT') {
     if (user.role !== 'owner') fail(403, 'Настройки чаевых доступны владельцу.');
     await saveTipSettings(env, site.id, await body(request));
     return json({ ok: true });
   }
+  if (section === 'website' && !key && method === 'PUT') {
+    if (user.role !== 'owner') fail(403, 'Настройки сайта доступны владельцу.');
+    await saveWebsiteButton(request, db, site);
+    return json({ ok: true });
+  }
+  if (section === 'theme' && !key && method === 'PUT') {
+    const data = await body(request);
+    const theme = field(data, 'theme', 20, true);
+    const previousTheme = field(data, 'previous_theme', 20, true);
+    if (!themes.includes(theme)) fail(400, 'Выберите тему из списка.');
+    if (!await q(db, 'UPDATE sites SET theme=? WHERE id=? AND theme=? RETURNING id', theme, site.id, previousTheme).first()) {
+      fail(409, 'Тема уже изменилась. Обновите страницу и повторите действие.');
+    }
+    return json({ ok: true });
+  }
   if (!section && method === 'PUT') {
     if (user.role !== 'owner') fail(403, 'Настройки сайта доступны владельцу.');
-    await q(db, `UPDATE sites SET name=?, type=?, description=?, theme=?, logo_url=?, cover_url=?, currency=?, status=?,
-      maps_url=?, telegram_url=?, instagram_url=?, vk_url=? WHERE id=?`, ...siteFields(await body(request)), site.id).run();
-    return json({ site: await findSite(db, slug) });
+    return json({ site: await saveSite(request, env, site) });
   }
   if (section === 'items') {
+    if (key === 'link' && method === 'PUT') {
+      await saveMenuLink(request, url, db, site);
+      return json({ ok: true });
+    }
+    if (key === 'import' && method === 'POST') return json(await importMenu(request, db, site), 201);
+    if (key === 'order' && method === 'PUT') {
+      await moveItem(request, db, site.id);
+      return json({ ok: true });
+    }
     if (!key && method === 'POST') {
       const { fields, photo } = await itemInput(request);
       const photoKey = await uploadPhoto(env, photo);
@@ -605,8 +971,9 @@ async function api(request, url, env) {
       return json({ ok: true });
     }
     if (key && method === 'DELETE') {
-      const item = await q(db, 'DELETE FROM items WHERE site_id=? AND id=? RETURNING photo_key', site.id, key).first();
-      if (!item) fail(404, 'Позиция не найдена.');
+      const version = expectedVersion(request);
+      const item = await q(db, 'DELETE FROM items WHERE site_id=? AND id=? AND edit_version=? RETURNING photo_key', site.id, key, version).first();
+      if (!item) fail(412, itemChanged);
       await removePhotoIfUnused(env, item.photo_key);
       return json({ ok: true });
     }
@@ -634,6 +1001,17 @@ async function count(db, site, kind, source) {
     ON CONFLICT (site_id, day, kind, source) DO UPDATE SET count = events.count + 1`, site.id, kind, source, dayKey()).run();
 }
 
+function trackAnalytics(ctx, write) {
+  const pending = write.catch((error) => console.error('Could not record analytics', error));
+  // Wait for the guarded write in local handlers that have no Worker execution context.
+  if (!ctx?.waitUntil) return pending;
+  try {
+    ctx.waitUntil(pending);
+  } catch (error) {
+    console.error('Could not schedule analytics', error);
+  }
+}
+
 function shell(assets, data = null, status = 200, state = {}) {
   const title = data?.site?.name || (status === 404 ? 'Страница не найдена' : 'Тап. — NFC-страницы');
   const escapes = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -657,7 +1035,7 @@ function parseTipAmount(value) {
   return amount;
 }
 
-async function startCheckout(request, url, env, site, settings, source) {
+async function startCheckout(request, url, env, site, settings, source, ctx) {
   const origin = request.headers.get('origin');
   const samePage = origin === 'null' && request.headers.get('sec-fetch-site') === 'same-origin';
   if (origin !== url.origin && !samePage) fail(403, 'Откройте форму на странице заведения.');
@@ -670,7 +1048,7 @@ async function startCheckout(request, url, env, site, settings, source) {
   } catch {
     fail(400, 'Откройте форму оплаты заново.');
   }
-  if (!intent || !paymentIdPattern.test(intent.id || '') || !Number.isSafeInteger(intent.expires) || intent.expires < nowSeconds()
+  if (!intent || !uuidPattern.test(intent.id || '') || !Number.isSafeInteger(intent.expires) || intent.expires < nowSeconds()
       || intent.version !== await tipVersion(settings)) fail(409, 'Обновите форму и проверьте получателя.');
 
   const db = env.DB;
@@ -700,10 +1078,12 @@ async function startCheckout(request, url, env, site, settings, source) {
     },
   };
   let destination;
+  let upstreamStatus;
   try {
-    const response = await fetch(checkoutEndpoint, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10000),
+    const response = await fetch(checkoutEndpoint, { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(10000),
       headers: { Authorization: 'Basic ' + btoa(settings.shop_id + ':' + privateKey), Accept: 'application/json',
         'Content-Type': 'application/json', 'X-API-Version': '2', RequestID: id }, body: JSON.stringify(options) });
+    upstreamStatus = response.status;
     if (response.ok) {
       const { checkout } = await response.json();
       const url = trustedPaymentUrl(checkout?.redirect_url, ['bepaid.by']);
@@ -711,14 +1091,17 @@ async function startCheckout(request, url, env, site, settings, source) {
           && checkout.token && url.searchParams.get('token') === checkout.token) destination = url.href;
     }
   } catch { /* A new form can be issued after a provider or network error. */ }
-  if (!destination) fail(502, 'bePaid пока не открыл страницу оплаты. Попробуйте ещё раз.');
+  if (!destination) {
+    console.error('bePaid checkout failed', upstreamStatus ?? 'request_error');
+    fail(502, 'bePaid пока не открыл страницу оплаты. Попробуйте ещё раз.');
+  }
   await q(db, 'UPDATE tip_payments SET checkout_url=? WHERE id=?', destination, id).run();
-  if (!test) await recordTipOpen(db, site.id, checkoutMethod, source);
+  if (!test) await trackAnalytics(ctx, recordTipOpen(db, site.id, checkoutMethod, source));
   return redirect(destination);
 }
 
 async function bePaidNotification(request, env, id) {
-  if (!paymentIdPattern.test(id)) fail(404, 'Платёж не найден.');
+  if (!uuidPattern.test(id)) fail(404, 'Платёж не найден.');
   const signature = request.headers.get('content-signature');
   if (!signature || signature.length > 1400) fail(401, 'Подпись обязательна.');
   const payment = await q(env.DB, 'SELECT id, amount, test, shop_id, public_key FROM tip_payments WHERE id=?', id).first();
@@ -748,13 +1131,14 @@ async function bePaidNotification(request, env, id) {
   return json({ ok: true });
 }
 
-async function tipsPage(request, url, env, assets, site, parts, preview, source, query) {
+async function tipsPage(request, url, env, assets, site, parts, preview, source, query, ctx) {
   const [, section, paymentId] = parts;
-  const publicSite = { name: site.name, slug: site.slug, theme: site.theme, logo_url: site.logo_url, type: site.type };
+  const { name, slug, theme, logo_url, logo_photo_url, type } = siteWithPhotos(site, preview);
+  const publicSite = { name, slug, theme, logo_url, logo_photo_url, type };
   const data = { site: publicSite, query, draftPreview: site.status === 'draft' && preview };
   const missing = () => shell(assets, null, 404, { view: 'missing' });
   if (section === 'result') {
-    if (request.method === 'POST' || !paymentIdPattern.test(paymentId || '')) return missing();
+    if (request.method === 'POST' || !uuidPattern.test(paymentId || '')) return missing();
     const payment = await q(env.DB, 'SELECT amount, recipient, test, paid_day FROM tip_payments WHERE site_id=? AND id=?', site.id, paymentId).first();
     if (!payment) return missing();
     return shell(assets, { ...data, view: 'tip-result', receipt: {
@@ -772,12 +1156,12 @@ async function tipsPage(request, url, env, assets, site, parts, preview, source,
   if (method !== checkoutMethod) {
     if (request.method === 'POST') return missing();
     if (preview) return shell(assets, { ...data, view: 'tip-preview', chosen });
-    if (request.method === 'GET') await recordTipOpen(env.DB, site.id, method, source);
+    if (request.method === 'GET') await trackAnalytics(ctx, recordTipOpen(env.DB, site.id, method, source));
     return redirect(normalizedLinks(settings)[method].url);
   }
   if (request.method === 'POST') {
     if (preview || !section) return missing();
-    try { return await startCheckout(request, url, env, site, settings, source); }
+    try { return await startCheckout(request, url, env, site, settings, source, ctx); }
     catch (error) {
       if (!error.status) console.error('Could not initialize bePaid checkout');
       return shell(assets, { ...data, view: 'tip-error', error: error.status ? error.message : 'Не удалось открыть оплату.' }, error.status || 502);
@@ -788,7 +1172,7 @@ async function tipsPage(request, url, env, assets, site, parts, preview, source,
   return shell(assets, { ...data, view: 'tip-amount', chosen, intent });
 }
 
-async function publicPage(request, url, env, assets) {
+async function publicPage(request, url, env, assets, ctx) {
   const alias = url.pathname.match(nfcPath);
   const isAlias = !!alias || url.pathname === '/';
   const tipRoute = url.pathname.match(/^\/([a-z0-9-]+)\/tips(?:\/(result|[a-z-]+)(?:\/([0-9a-f-]+))?)?\/?$/);
@@ -814,28 +1198,43 @@ async function publicPage(request, url, env, assets) {
   if (isAlias) return redirect('/' + site.slug + query);
   if (tipRoute) {
     if (tipRoute[2] !== 'result' && tipRoute[3]) return missing();
-    return tipsPage(request, url, env, assets, site, tipRoute.slice(1), !!previewAllowed, source, query);
+    return tipsPage(request, url, env, assets, site, tipRoute.slice(1), !!previewAllowed, source, query, ctx);
   }
   if (section?.startsWith('go/')) {
-    const destination = Object.hasOwn(actionColumns, action) ? site[actionColumns[action]] : '';
+    const column = Object.hasOwn(actionColumns, action) ? actionColumns[action] : null;
+    const enabled = column && (action !== 'maps' || site.show_maps);
+    const destination = enabled && !JSON.parse(site.hidden_links ?? '[]').includes(column) ? site[column] : '';
     if (!destination) return shell(assets, null, 404, { view: 'missing' });
-    if (!previewAllowed && request.method === 'GET') await count(db, site, action, source);
+    if (!previewAllowed && request.method === 'GET') await trackAnalytics(ctx, count(db, site, action, source));
     return redirect(destination);
   }
   const wantsMenu = section === 'menu';
-  if (!previewAllowed && request.method === 'GET') await count(db, site, wantsMenu ? 'menu' : 'visit', source);
-  const { nfc_key, ...publicSite } = site;
+  if (wantsMenu && site.menu_url && new URL(site.menu_url).origin !== url.origin) {
+    if (!previewAllowed && request.method === 'GET') await trackAnalytics(ctx, count(db, site, 'menu', source));
+    return redirect(site.menu_url);
+  }
+  const { nfc_key, website_url, hidden_links, ...publicSite } = siteWithPhotos(site, !!previewAllowed);
+  for (const key of hidden_links) delete publicSite[key];
+  if (!site.show_maps) delete publicSite.maps_url;
+  if (site.show_hours === 0) delete publicSite.opening_hours;
+  if (site.show_wifi === 0) {
+    delete publicSite.wifi_name;
+    delete publicSite.wifi_password;
+  }
+  if (site.show_website) publicSite.website_url = website_url;
   const items = wantsMenu
-    ? await all(db, 'SELECT id, name, category, description, price, photo_key FROM items WHERE site_id=? AND available=1 ORDER BY created_at, name', site.id)
+    ? await all(db, 'SELECT id, name, category, description, price, photo_key FROM items WHERE site_id=? AND available=1 ORDER BY ' + itemOrder, site.id)
     : [];
   const tips = wantsMenu ? [] : activeTips(await tipSettings(db, site.id), env);
-  return shell(assets, { view: wantsMenu ? 'menu' : 'public', site: publicSite,
+  const response = shell(assets, { view: wantsMenu ? 'menu' : 'public', site: publicSite,
     items: items.map((item) => itemWithPhoto(item, !!previewAllowed)), tips, query, draftPreview: site.status === 'draft' });
+  if (!previewAllowed && request.method === 'GET') await trackAnalytics(ctx, count(db, site, wantsMenu ? 'menu' : 'visit', source));
+  return response;
 }
 
 export function createApp(assets) {
   return {
-    async fetch(request, env) {
+    async fetch(request, env, ctx) {
       try {
         const url = new URL(request.url);
         const path = url.pathname;
@@ -845,10 +1244,11 @@ export function createApp(assets) {
           return await bePaidNotification(request, env, path.slice('/webhooks/bepaid/'.length));
         }
         if (request.method === 'POST' && /^\/[a-z0-9-]+\/tips\/bepaid\/?$/.test(path)) {
-          return await publicPage(request, url, env, assets);
+          return await publicPage(request, url, env, assets, ctx);
         }
         if (!['GET', 'HEAD'].includes(request.method)) return json({ error: 'Действие недоступно.' }, 405);
-        if (path.startsWith(photoPrefix)) return await servePhoto(request, url, env);
+        if (path.startsWith(photoPrefix)) return await servePhoto(request, url, env, photoPrefix);
+        if (path.startsWith(sitePhotoPrefix)) return await servePhoto(request, url, env, sitePhotoPrefix);
         if (path.startsWith('/assets/')) {
           const file = path.slice('/assets/'.length);
           const asset = Object.hasOwn(assets, file) && assets[file];
@@ -860,7 +1260,7 @@ export function createApp(assets) {
         }
         if (path === '/favicon.ico') return new Response(null, { status: 204 });
         if ((path === '/' && !url.searchParams.has('nfc')) || path === '/admin' || path.startsWith('/admin/')) return shell(assets);
-        return await publicPage(request, url, env, assets);
+        return await publicPage(request, url, env, assets, ctx);
       } catch (error) {
         if (!error.status) console.error(error);
         return json({ error: error.status ? error.message : 'Внутренняя ошибка. Обновите страницу и попробуйте ещё раз.' }, error.status || 500);

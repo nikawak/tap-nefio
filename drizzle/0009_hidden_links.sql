@@ -1,0 +1,1 @@
+ALTER TABLE sites ADD COLUMN hidden_links TEXT NOT NULL DEFAULT '[]';
