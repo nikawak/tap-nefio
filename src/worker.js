@@ -94,8 +94,12 @@ function siteAssignment(db, email) {
   return q(db, 'SELECT 1 FROM site_admins WHERE email=? LIMIT 1', email).first();
 }
 
+function isOwnerEmail(env, email) {
+  return !!email && [env.OWNER_EMAIL, env.OWNER_SECOND_EMAIL].some((value) => normalizeEmail(value) === email);
+}
+
 async function accountRole(env, email) {
-  if (email && email === normalizeEmail(env.OWNER_EMAIL)) return 'owner';
+  if (isOwnerEmail(env, email)) return 'owner';
   return await siteAssignment(env.DB, email) ? 'manager' : null;
 }
 
@@ -104,6 +108,7 @@ async function accountForPhone(env, phone) {
   const owner = normalizeEmail(env.OWNER_EMAIL);
   const assigned = await q(env.DB, `SELECT p.email, p.first_name || ' ' || p.last_name AS name FROM admin_profiles p
     WHERE p.phone=? AND EXISTS (SELECT 1 FROM site_admins a WHERE a.email=p.email)`, phone).first();
+  if (assigned && isOwnerEmail(env, assigned.email)) return null;
   if (!assigned && owner && phone === belarusPhone(env.OWNER_PHONE)) return { email: owner, name: 'Владелец' };
   return assigned;
 }
@@ -1008,7 +1013,7 @@ async function saveAdministrator(request, env, site, emailToEdit) {
   const props = await body(request);
   if (!props || typeof props !== 'object') fail(400, 'Укажите данные администратора.');
   const email = normalizeEmail(emailToEdit ?? props.email);
-  if (email.length > 254 || !emailPattern.test(email) || email === normalizeEmail(env.OWNER_EMAIL)) {
+  if (email.length > 254 || !emailPattern.test(email) || isOwnerEmail(env, email)) {
     fail(400, 'Укажите email администратора.');
   }
   const firstName = typeof props.first_name === 'string' ? props.first_name.trim() : '';

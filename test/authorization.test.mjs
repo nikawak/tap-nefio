@@ -145,6 +145,37 @@ test('the standalone server requires a verified Google session for the owner', a
   assert.equal((await request('/api/sites', { cookie })).status, 401);
 });
 
+test('a second verified Google address opens the owner panel without granting owner access to its old phone sessions', async (t) => {
+  const { request, googleLogin, oauthLogin, env } = fixture(t);
+  const second = 'second.owner@gmail.com';
+  const ownerPhone = '+375331234567';
+  const admins = '/api/sites/moka-coffee/admins';
+  const cookie = signInCookie(await googleLogin(owner));
+  const added = await request(admins, { cookie, method: 'POST', body: { ...profile, email: second } });
+  assert.equal(added.status, 201);
+  const oldPhoneLogin = await oauthLogin('telegram', { phone_number: adminPhone });
+  const oldPhoneCookie = signInCookie(oldPhoneLogin);
+  assert.ok(oldPhoneCookie);
+  assert.equal((await (await request('/api/session', { cookie: oldPhoneCookie })).json()).user.role, 'manager');
+
+  env.OWNER_SECOND_EMAIL = '  SECOND.OWNER@GMAIL.COM  ';
+  env.OWNER_PHONE = ownerPhone;
+  const secondLogin = await googleLogin(second);
+  const secondCookie = signInCookie(secondLogin);
+  assert.ok(secondCookie);
+  const { user, sites } = await (await request('/api/sites', { cookie: secondCookie })).json();
+  assert.equal(user.role, 'owner');
+  assert.equal(sites.length, 3);
+  assert.equal((await (await request('/api/session', { cookie })).json()).user.role, 'owner');
+  assert.equal((await request('/api/sites', { cookie: oldPhoneCookie })).status, 401);
+  assert.equal((await oauthLogin('telegram', { phone_number: adminPhone })).headers.get('location'), '/admin?telegram=denied');
+  const ownerPhoneLogin = await oauthLogin('telegram', { phone_number: ownerPhone });
+  const ownerPhoneCookie = signInCookie(ownerPhoneLogin);
+  assert.ok(ownerPhoneCookie);
+  assert.equal((await (await request('/api/session', { cookie: ownerPhoneCookie })).json()).user.email, owner);
+  assert.equal((await request('/api/sites/basilico/admins', { cookie, method: 'POST', body: { ...profile, email: second } })).status, 400);
+});
+
 test('signout clears both login flows and revokes the session', async (t) => {
   const { request, googleLogin } = fixture(t);
   const cookie = signInCookie(await googleLogin(owner));
