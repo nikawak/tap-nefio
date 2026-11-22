@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Hoster.by operation
+        type: choice
+        options: [check, publish]
+        default: check
 
 permissions:
   contents: read
@@ -20,3 +27,46 @@ jobs:
         with:
           node-version: '24'
       - run: node --test
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && vars.HOSTER_AUTO_DEPLOY == 'true'))
+    needs: test
+    runs-on: ubuntu-latest
+    concurrency:
+      group: hoster-nefio-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - name: Verify main still points to this revision
+        id: revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          if [ "$GITHUB_SHA" = "$head" ]; then
+            echo 'current=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run the Hoster.by publisher
+        if: steps.revision.outputs.current == 'true'
+        env:
+          HOSTER_DEPLOY_KEY: ${{ secrets.HOSTER_DEPLOY_KEY }}
+          OPERATION: ${{ inputs.operation || 'publish' }}
+        run: |
+          test -n "$HOSTER_DEPLOY_KEY"
+          umask 077
+          ssh_dir=$(mktemp -d)
+          trap 'rm -rf "$ssh_dir"' EXIT
+          printf '%s\n' "$HOSTER_DEPLOY_KEY" > "$ssh_dir/key"
+          printf '%s\n' 'vh171.hoster.by ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICAzdZjwDpzjx/Sft5CHg2V09PJFY1FEF73MtxOp86F5' > "$ssh_dir/known_hosts"
+          ssh_options=(-T -i "$ssh_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o "UserKnownHostsFile=$ssh_dir/known_hosts")
+          if [ "$OPERATION" = check ]; then
+            ssh "${ssh_options[@]}" h222736@vh171.hoster.by check < /dev/null
+          else
+            node scripts/deploy/pack.mjs "$ssh_dir/release.gz"
+            ssh "${ssh_options[@]}" h222736@vh171.hoster.by "publish $GITHUB_SHA" < "$ssh_dir/release.gz"
+          fi
