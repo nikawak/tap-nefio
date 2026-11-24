@@ -120,11 +120,15 @@ test('Google login requires a current assignment and scopes every operation to i
   assert.equal((await request('/api/sites/basilico/items', { cookie, method: 'POST', body: {} })).status, 404);
   assert.equal((await request('/forma-studio', { cookie })).status, 404);
   assert.equal((await request('/api/sites', { cookie, method: 'POST', body: {} })).status, 403);
+  assert.equal((await request('/api/sites/moka-coffee', { cookie, method: 'DELETE' })).status, 405);
   assert.equal((await request('/api/sites/moka-coffee/admins', { cookie, method: 'POST', body: {} })).status, 403);
+  const assignment = '/api/sites/moka-coffee/admins/' + encodeURIComponent(manager);
+  assert.equal((await request(assignment, { cookie, method: 'PUT', body: profile })).status, 403);
+  assert.equal((await request(assignment, { cookie, method: 'DELETE' })).status, 403);
   const item = { name: 'Кофе', category: 'Напитки', price: 500, available: true };
   assert.equal((await request('/api/sites/moka-coffee/items', { cookie, method: 'POST', body: item })).status, 201);
   const ownerCookie = signInCookie(await googleLogin(owner));
-  assert.equal((await request('/api/sites/moka-coffee/admins/' + encodeURIComponent(manager), { cookie: ownerCookie, method: 'DELETE' })).status, 200);
+  assert.equal((await request(assignment, { cookie: ownerCookie, method: 'DELETE' })).status, 200);
   assert.equal((await request('/api/sites', { cookie })).status, 401);
   db.prepare('INSERT INTO site_admins VALUES (?, ?)').run('moka', manager);
   assert.equal((await request('/api/sites', { cookie })).status, 401);

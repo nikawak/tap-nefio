@@ -129,9 +129,12 @@ test('the panel requests statistics only for reports and keeps the site tabs vis
   location.pathname = '/admin/sites';
   await load();
   assert.match(app.innerHTML, /Moka Coffee/);
+  assert.match(app.innerHTML, /Создание и удаление мини-сайтов, выдачу и отзыв доступа согласовывайте с владельцем платформы/);
+  assert.doesNotMatch(app.innerHTML, /data-action="new-site"/);
   location.pathname = '/admin/sites/moka-coffee';
   await load();
   assert.match(app.innerHTML, /Капучино/);
+  assert.doesNotMatch(app.innerHTML, /href="\/admin\/sites\/moka-coffee\/access"/);
   assert.deepEqual(requested, ['/api/overview?days=7', '/api/sites', '/api/sites/moka-coffee']);
   location.pathname += '/analytics';
   await load();

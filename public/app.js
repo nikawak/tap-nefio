@@ -314,7 +314,10 @@ function analyticsContent(data) {
 }
 
 function sitesContent(data) {
-  return `<div class="page-heading"><div><h1>Мини-сайты</h1><p>Управляйте страницами, NFC-ссылками и меню заведений.</p></div><div class="heading-actions">${createButton()}</div></div>
+  const description = state.user.role === 'owner'
+    ? 'Управляйте страницами, NFC-ссылками и меню заведений.'
+    : 'Создание и удаление мини-сайтов, выдачу и отзыв доступа согласовывайте с владельцем платформы.';
+  return `<div class="page-heading"><div><h1>Мини-сайты</h1><p>${description}</p></div><div class="heading-actions">${createButton()}</div></div>
   ${data.sites.length ? `<div class="site-toolbar"><label class="search-input">${svg('search', 18)}<input id="siteSearch" type="search" placeholder="Поиск по названию или адресу" autocomplete="off" aria-label="Поиск мини-сайтов"></label><span>${nf.format(data.sites.length)} в списке</span></div>` : ''}
   <div id="searchResults">${siteCards(data.sites)}</div>`;
 }
