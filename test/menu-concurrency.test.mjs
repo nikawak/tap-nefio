@@ -191,10 +191,10 @@ test('guest blocks can be reordered by assigned administrators, and the rating r
   const guest_order = [...site.guest_order].reverse();
   const put = (patch, version = 1) => request(path, { method: 'PUT', role: 'manager', version,
     body: { guest_order, show_reviews: true, ...patch } });
-  const page = async () => {
-    const markup = await (await request('/moka-coffee')).text();
+  const page = async (path = '/moka-coffee') => {
+    const markup = await (await request(path)).text();
     const model = JSON.parse(markup.match(/id="page-data">([^<]*)<\/script>/)[1]);
-    const app = { innerHTML: '', querySelector() { return null; } };
+    const app = { innerHTML: '', querySelector() { return null; }, addEventListener() {} };
     const elements = { '#app': app, '#modal': { addEventListener() {} }, '#page-data': { textContent: '{}' } };
     runInNewContext(read('public/app.js').replace(/\bstart\(\);\s*$/, '') + '\nlanding(model);', { model, document: {
       querySelector: (selector) => elements[selector], body: { classList: { add() {} } },
@@ -234,10 +234,19 @@ test('guest blocks can be reordered by assigned administrators, and the rating r
   const separate = await page();
   assert.deepEqual(separate.model.reviewProviders, ['yandex', 'google']);
   assert.deepEqual(separate.model.site.guest_order, guest_order);
-  assert.equal(separate.model.site.maps_url, yandex);
+  assert.equal(separate.model.site.maps_url, undefined);
+  assert.doesNotMatch(separate.markup, /(?:\/go\/maps|Карты и маршрут)/);
+  assert.match(separate.markup, /data-open-feedback/);
+  const guestMenu = await page('/moka-coffee/menu?nfc=moka-demo');
+  assert.deepEqual(guestMenu.model.reviewProviders, []);
+  assert.match(guestMenu.markup, /data-menu-item=/);
+  assert.doesNotMatch(guestMenu.markup, /public-actions|data-open-feedback|public-social/);
+  assert.deepEqual([...guestMenu.markup.matchAll(/href="([^"]+)"/g)].map(([, url]) => url), ['/moka-coffee?nfc=moka-demo']);
   assert.equal((await saveGuest({ maps_url: '' }, 7)).status, 200);
   assert.equal((await request('/moka-coffee/go/maps')).status, 404);
   assert.deepEqual((await page()).model.reviewProviders, ['yandex', 'google']);
+  assert.equal((await saveGuest({ guest_order: ['maps', ...guest_order] }, 8)).status, 200);
+  assert.deepEqual((await menu('manager')).site.guest_order, guest_order);
 });
 
 test('the production demo migration fills coffe1 without overwriting existing content or other venues', async (t) => {
@@ -255,7 +264,10 @@ test('the production demo migration fills coffe1 without overwriting existing co
   db.exec(fill);
   assert.deepEqual((await menu()).site, original);
   const model = JSON.parse((await (await request('/coffe1/menu')).text()).match(/id="page-data">([^<]*)<\/script>/)[1]);
-  assert.deepEqual(model.reviewProviders, ['yandex', 'google']);
+  const guest = JSON.parse((await (await request('/coffe1')).text()).match(/id="page-data">([^<]*)<\/script>/)[1]);
+  assert.deepEqual(guest.reviewProviders, ['yandex', 'google']);
+  assert.deepEqual(model.reviewProviders, []);
+  assert.ok(!guest.site.guest_order.includes('maps'));
   assert.equal(model.site.website_url, 'https://example.test/');
   assert.match(model.site.opening_hours, /^Демо:/);
   assert.equal(model.site.wifi_name, 'Tap Coffee Demo');
@@ -329,7 +341,8 @@ test('site setup saves guest link visibility together and preserves disabled add
   assert.equal((await menu()).site.website_url, settings.website_url);
   const { maps_url, ...linksWithoutMaps } = settings.link_visibility;
   assert.equal((await save({ ...settings, link_visibility: linksWithoutMaps })).status, 200);
-  assert.equal((await publicPage()).maps_url, original.maps_url);
+  assert.equal((await request('/moka-coffee/go/maps')).headers.get('location'), original.maps_url);
+  assert.equal((await publicPage()).maps_url, undefined);
   const created = await request('/api/sites', { method: 'POST', body: { ...settings, slug: 'test-guest-links', link_visibility: linksWithoutMaps } });
   assert.equal(created.status, 201);
   const { site: createdSite } = await created.json();
@@ -352,9 +365,9 @@ test('a single site form shows optional guest fields only when selected', () => 
     assert.match(markup, /name="show_hours" data-site-toggle\s*>/);
     assert.match(markup, /name="show_wifi" data-site-toggle\s*>/);
   }
-  const site = { guest_order: ['maps'], guest_version: 1, show_maps: 1, maps_url: 'https://maps.example.test/' };
-  assert.match(guestLayoutForm(site), /name="maps_url"[^>]*value="https:\/\/maps\.example\.test\/"/);
-  assert.doesNotMatch(guestLayoutForm(site), /checkbox|review_url/);
+  const site = { guest_order: ['menu', 'feedback'], guest_version: 1, show_maps: 1, maps_url: 'https://maps.example.test/' };
+  assert.match(guestLayoutForm(site), /data-guest-block="menu"/);
+  assert.doesNotMatch(guestLayoutForm(site), /checkbox|maps_url|review_url/);
   assert.match(reviewSettings(site), /name="yandex_review_url"/);
   assert.match(reviewSettings(site), /name="google_review_url"/);
   const input = { value: 'https://example.test/', hasAttribute: () => true };

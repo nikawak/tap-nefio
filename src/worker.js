@@ -1,7 +1,7 @@
 const actionColumns = { maps: 'maps_url', telegram: 'telegram_url', instagram: 'instagram_url', vk: 'vk_url' };
 const contactColumns = Object.values(actionColumns);
 const reviewColumns = { yandex: 'yandex_review_url', google: 'google_review_url' };
-const guestBlocks = ['hours', 'wifi', 'menu', 'feedback', 'maps', 'website', 'tips', 'telegram', 'instagram', 'vk'];
+const guestBlocks = ['hours', 'wifi', 'menu', 'feedback', 'website', 'tips', 'telegram', 'instagram', 'vk'];
 const currencies = ['BYN', 'RUB', 'KZT', 'USD', 'EUR'];
 const themes = [
   'light', 'dark', 'coffee', 'slate', 'garden', 'indigo', 'lavender', 'peach', 'sand', 'walnut',
@@ -1056,7 +1056,7 @@ async function saveGuestLayout(request, db, site) {
   const version = expectedVersion(request);
   const data = await body(request);
   const enabled = optionalFlag(data, 'show_reviews');
-  const order = data.guest_order;
+  const order = Array.isArray(data.guest_order) ? data.guest_order.filter((key) => key !== 'maps') : data.guest_order;
   if (order !== undefined && (!Array.isArray(order) || order.length !== guestBlocks.length ||
       new Set(order).size !== guestBlocks.length || order.some((key) => !guestBlocks.includes(key)))) {
     fail(400, 'Проверьте порядок элементов для гостей.');
@@ -1558,9 +1558,8 @@ async function publicPage(request, url, env, assets, ctx) {
     if (!previewAllowed && request.method === 'GET') await trackAnalytics(ctx, count(db, site, 'menu', source));
     return redirect(site.menu_url);
   }
-  const { nfc_key, website_url, hidden_links, guest_version, yandex_review_url, google_review_url, ...publicSite } = siteWithPhotos(site, !!previewAllowed);
-  for (const key of hidden_links) if (key !== 'maps_url') delete publicSite[key];
-  if (!site.show_maps) delete publicSite.maps_url;
+  const { nfc_key, website_url, hidden_links, guest_version, maps_url, show_maps, yandex_review_url, google_review_url, ...publicSite } = siteWithPhotos(site, !!previewAllowed);
+  for (const key of hidden_links) delete publicSite[key];
   if (site.show_hours === 0) delete publicSite.opening_hours;
   if (site.show_wifi === 0) {
     delete publicSite.wifi_name;
@@ -1572,7 +1571,8 @@ async function publicPage(request, url, env, assets, ctx) {
     : [];
   const tips = wantsMenu ? [] : activeTips(await tipSettings(db, site.id), env);
   const response = shell(assets, { view: wantsMenu ? 'menu' : 'public', site: publicSite,
-    items: items.map((item) => itemWithPhoto(item, !!previewAllowed)), tips, reviewProviders: reviewProviders(site), query, draftPreview: site.status === 'draft' });
+    items: items.map((item) => itemWithPhoto(item, !!previewAllowed)), tips,
+    reviewProviders: wantsMenu ? [] : reviewProviders(site), query, draftPreview: site.status === 'draft' });
   if (!previewAllowed && request.method === 'GET') await trackAnalytics(ctx, count(db, site, wantsMenu ? 'menu' : 'visit', source));
   return response;
 }

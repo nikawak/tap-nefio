@@ -567,7 +567,6 @@ body:has(#modal[open], .theme-catalogue[open]) { overflow: hidden; }
 .public-actions > :not(.public-social) { flex: 0 0 100%; min-width: 0; }
 .public-social { display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--venue-control); color: var(--venue-accent); }
 .public-social:hover { background: var(--venue-bg); }
-.menu-contact-actions { margin-top: 24px; }
 .public-button {
   display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 8px 12px;
   border: 1px solid var(--venue-line, var(--venue-bg)); border-radius: var(--venue-control, 8px);

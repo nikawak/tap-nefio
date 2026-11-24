@@ -56,7 +56,7 @@ const actionInfo = {
 const reviewLabels = { yandex: 'Яндекс', google: 'Google' };
 const guestBlockLabels = {
   hours: 'Время работы', wifi: 'Гостевой Wi-Fi', menu: 'Меню', feedback: 'Оценить заведение',
-  maps: 'Карты и маршрут', website: 'Официальный сайт', tips: 'Чаевые',
+  website: 'Официальный сайт', tips: 'Чаевые',
   telegram: 'Telegram', instagram: 'Instagram', vk: 'ВКонтакте',
 };
 const tipLinks = {
@@ -487,10 +487,6 @@ function guestLayoutForm(site) {
   const order = site.guest_order;
   return `<section class="panel form-panel"><h2>Для гостей</h2>
     <form id="guestLayoutForm" class="form-stack" data-version="${site.guest_version}">
-      <fieldset class="form-stack site-contact-fields"><legend>Карты и маршрут</legend>
-        <label>Ссылка на карты<input name="maps_url" type="url" maxlength="2048" placeholder="https://…" value="${site.show_maps ? html(site.maps_url) : ''}"></label>
-        <p class="muted">Чтобы скрыть кнопку маршрута, оставьте поле пустым.</p>
-      </fieldset>
       <fieldset class="form-stack site-contact-fields"><legend>Порядок элементов</legend>
         <p class="muted">Порядок применяется к включённым элементам на гостевой странице.</p>
         <ol class="guest-order">${order.map((key, index) => `<li data-guest-block="${key}"><span>${guestBlockLabels[key]}</span>
@@ -729,16 +725,11 @@ function detailContent(current, bundle, analytics) {
         : state.statsFailed ? reportUnavailable() : '<div class="initial" role="status">Загрузка статистики…</div>'}` : ''}`;
 }
 
-function landing(model) {
-  const site = model.site;
-  const base = '/' + site.slug;
-  const isMenu = model.view === 'menu';
-  const cover = !isMenu && (site.cover_photo_url || site.cover_url);
-  const query = html(model.query);
+function guestActions({ site, reviewProviders, tips }, base, query) {
   const label = site.type === 'Студия красоты' ? 'Смотреть услуги' : 'Открыть меню';
   const blocks = {
-    hours: !isMenu && site.show_hours !== 0 && site.opening_hours && `<dl class="guest-info"><dt>${svg('calendar')} Время работы</dt><dd>${html(site.opening_hours)}</dd></dl>`,
-    wifi: !isMenu && site.show_wifi !== 0 && (site.wifi_name || site.wifi_password) && `<details class="guest-wifi">
+    hours: site.show_hours !== 0 && site.opening_hours && `<dl class="guest-info"><dt>${svg('calendar')} Время работы</dt><dd>${html(site.opening_hours)}</dd></dl>`,
+    wifi: site.show_wifi !== 0 && (site.wifi_name || site.wifi_password) && `<details class="guest-wifi">
       <summary class="public-button"><span>${svg('nfc')}Wi-Fi</span>${svg('chevron')}</summary>
       <div class="guest-wifi-info"><dl class="guest-info">
         ${site.wifi_name ? `<div><dt>Сеть</dt><dd>${html(site.wifi_name)}</dd></div>` : ''}
@@ -746,17 +737,25 @@ function landing(model) {
       </dl>
       ${site.wifi_password ? '<button type="button" class="public-button" data-copy-wifi>Скопировать пароль</button>' : ''}
       <p>Откройте настройки Wi-Fi на телефоне и выберите гостевую сеть.</p></div></details>`,
-    menu: !isMenu && site.show_menu && `<a class="public-button main-action" href="${base}/menu${query}" ${site.menu_url ? 'target="_top"' : ''}><span>${svg('book')}${label}</span></a>`,
-    feedback: model.reviewProviders?.length && `<button type="button" class="public-button" data-open-feedback aria-haspopup="dialog"><span>${svg('star')}Оценить заведение</span></button>`,
-    maps: site.show_maps && site.maps_url && `<a class="public-button" href="${base}/go/maps${query}"><span>${svg('map')}Карты и маршрут</span></a>`,
+    menu: site.show_menu && `<a class="public-button main-action" href="${base}/menu${query}" ${site.menu_url ? 'target="_top"' : ''}><span>${svg('book')}${label}</span></a>`,
+    feedback: reviewProviders?.length && `<button type="button" class="public-button" data-open-feedback aria-haspopup="dialog"><span>${svg('star')}Оценить заведение</span></button>`,
     website: site.show_website && site.website_url && `<a class="public-button" href="${html(site.website_url)}" target="_blank" rel="noopener noreferrer"><span>${svg('globe')}Официальный сайт</span></a>`,
-    tips: model.tips?.length && `<a class="public-button" target="_top" href="${base}/tips${query}"><span>${tipIcon}Оставить чаевые</span></a>`,
+    tips: tips?.length && `<a class="public-button" target="_top" href="${base}/tips${query}"><span>${tipIcon}Оставить чаевые</span></a>`,
   };
   for (const key of ['telegram', 'instagram', 'vk']) {
     const name = guestBlockLabels[key];
     blocks[key] = site[key + '_url'] && `<a class="public-social" href="${base}/go/${key}${query}" aria-label="${name}" title="${name}">${svg(actionInfo[key][1], 24)}</a>`;
   }
   const actions = (site.guest_order ?? Object.keys(blocks)).map((key) => blocks[key]).filter(Boolean).join('');
+  return actions ? `<div class="public-actions">${actions}</div>` : '';
+}
+
+function landing(model) {
+  const site = model.site;
+  const base = '/' + site.slug;
+  const isMenu = model.view === 'menu';
+  const cover = !isMenu && (site.cover_photo_url || site.cover_url);
+  const query = html(model.query);
   const groups = new Map();
   for (const item of model.items) {
     if (!groups.has(item.category)) groups.set(item.category, []);
@@ -769,13 +768,12 @@ function landing(model) {
       <div class="public-hero-inner">${siteIcon(site, !isMenu)}<div class="public-identity"><p class="public-type">${html(site.type)}</p><h1>${html(site.name)}</h1>${site.description ? `<p class="public-description">${html(site.description)}</p>` : ''}</div></div>
     </section>
     <div class="public-content">
-      ${isMenu ? `<div class="public-menu-heading"><h2>${site.type === 'Студия красоты' ? 'Услуги' : 'Меню'}</h2><a href="${base + html(model.query)}">Главная страница</a></div>
+      ${isMenu ? `<div class="public-menu-heading"><h2>${site.type === 'Студия красоты' ? 'Услуги' : 'Меню'}</h2><a href="${base + query}">Главная страница</a></div>
       ${groups.size ? [...groups].map(([category, items]) => `<section class="public-category"><h3>${html(category)}</h3><ul>${items.map((item) =>
         `<li><button class="public-item" type="button" data-menu-item="${html(item.id)}" aria-haspopup="dialog">
           <span class="public-item-copy"><strong>${html(item.name)}</strong>${item.description ? `<span class="public-item-summary">${html(item.description)}</span>` : ''}</span>
           <span class="public-item-price">${money(item.price, site.currency)}</span>
-        </button></li>`).join('')}</ul></section>`).join('') : '<p>Позиции появятся здесь позже.</p>'}` : ''}
-      ${actions ? `<div class="public-actions${isMenu ? ' menu-contact-actions' : ''}">${actions}</div>` : ''}
+        </button></li>`).join('')}</ul></section>`).join('') : '<p>Позиции появятся здесь позже.</p>'}` : guestActions(model, base, query)}
     </div>
     <footer class="public-footer">${svg('nfc', 18)} Сделано в Тап.</footer>
   </main>`;
@@ -1554,7 +1552,6 @@ async function onSubmit(event) {
   try {
     if (form.id === 'guestLayoutForm') {
       data.guest_order = [...form.querySelectorAll('[data-guest-block]')].map((row) => row.dataset.guestBlock);
-      if (data.maps_url === form.elements.maps_url.defaultValue) delete data.maps_url;
       await api(base + '/guest', { method: 'PUT', version: form.dataset.version, body: data });
       toast('Гостевая страница обновлена');
     }
