@@ -1,5 +1,7 @@
 const actionColumns = { maps: 'maps_url', telegram: 'telegram_url', instagram: 'instagram_url', vk: 'vk_url' };
 const contactColumns = Object.values(actionColumns);
+const reviewColumns = { yandex: 'yandex_review_url', google: 'google_review_url' };
+const guestBlocks = ['hours', 'wifi', 'menu', 'feedback', 'maps', 'website', 'tips', 'telegram', 'instagram', 'vk'];
 const currencies = ['BYN', 'RUB', 'KZT', 'USD', 'EUR'];
 const themes = [
   'light', 'dark', 'coffee', 'slate', 'garden', 'indigo', 'lavender', 'peach', 'sand', 'walnut',
@@ -618,6 +620,10 @@ function itemWithPhoto({ photo_key: key, ...item }, preview = false) {
 }
 
 function siteWithPhotos({ logo_key, cover_key, menu_order_version, hidden_links, ...site }, preview = false) {
+  if (site.guest_order !== undefined) {
+    const order = JSON.parse(site.guest_order);
+    site.guest_order = [...new Set([...order.filter((key) => guestBlocks.includes(key)), ...guestBlocks])];
+  }
   return { ...site, hidden_links: JSON.parse(hidden_links ?? '[]'), logo_photo_url: photoUrl(sitePhotoPrefix, logo_key, preview),
     cover_photo_url: photoUrl(sitePhotoPrefix, cover_key, preview) };
 }
@@ -701,7 +707,7 @@ function expectedVersion(request) {
   const value = request.headers.get('if-match');
   if (value === null) fail(428, 'Обновите страницу панели и повторите действие.');
   const version = Number(/^"([1-9][0-9]*)"$/.exec(value)?.[1]);
-  if (!Number.isSafeInteger(version)) fail(400, 'Некорректная версия меню. Обновите страницу.');
+  if (!Number.isSafeInteger(version)) fail(400, 'Некорректная версия. Обновите страницу.');
   return version;
 }
 
@@ -1039,10 +1045,38 @@ async function overview(db, user, url) {
     sites: sites.map((site) => ({ ...siteWithPhotos(site, site.status === 'draft'), ...summaries.get(site.id) })) };
 }
 
+function reviewProviders(site) {
+  return site.show_reviews ? Object.keys(reviewColumns).filter((key) => site[reviewColumns[key]]) : [];
+}
+
+async function saveGuestLayout(request, db, site) {
+  const version = expectedVersion(request);
+  const data = await body(request);
+  const enabled = optionalFlag(data, 'show_reviews');
+  const order = data.guest_order;
+  if (enabled == null || !Array.isArray(order) || order.length !== guestBlocks.length ||
+      new Set(order).size !== guestBlocks.length || order.some((key) => !guestBlocks.includes(key))) {
+    fail(400, 'Проверьте порядок элементов и настройку отзывов.');
+  }
+  const links = Object.values(reviewColumns).map((column) => {
+    if (data[column] === undefined) return site[column];
+    const value = field(data, column, 2048);
+    if (!value) return '';
+    const url = httpsLink(value);
+    if (!url) fail(400, 'Укажите полную HTTPS-ссылку для отзывов.');
+    return url.href;
+  });
+  if (!await q(db, `UPDATE sites SET guest_order=?, show_reviews=?, yandex_review_url=?, google_review_url=?,
+    guest_version=guest_version+1 WHERE id=? AND guest_version=? RETURNING id`,
+    JSON.stringify(order), enabled, ...links, site.id, version).first()) {
+    fail(409, 'Порядок или настройки отзывов уже изменились. Обновите страницу и повторите действие.');
+  }
+}
+
 async function recordFeedback(request, url, db, slug) {
   if (request.headers.get('origin') !== url.origin) fail(403, 'Откройте форму на странице заведения.');
   const site = await findSite(db, slug);
-  if (site?.status !== 'live') fail(404, 'Страница заведения недоступна.');
+  if (site?.status !== 'live' || !reviewProviders(site).length) fail(404, 'Отзывы для этого заведения недоступны.');
   const data = await body(request, 8192);
   if (typeof data.id !== 'string' || !uuidPattern.test(data.id) || ![1, 2, 3].includes(data.rating)) {
     fail(400, 'Укажите оценку и заполните отзыв.');
@@ -1057,25 +1091,29 @@ async function recordFeedback(request, url, db, slug) {
   return json({ ok: true }, 201);
 }
 
-async function feedbackInbox(db, id, params) {
+async function feedbackInbox(db, params, { filter, args }, siteId) {
   const rating = params.get('rating');
   const status = params.get('status');
   const requestedPage = Number(params.get('page'));
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 && requestedPage < 100000 ? requestedPage : 1;
   const sorts = {
-    recent: 'created_at DESC, id DESC',
-    oldest: 'created_at ASC, id ASC',
-    lowest: 'rating ASC, created_at DESC, id DESC',
-    highest: 'rating DESC, created_at DESC, id DESC',
+    recent: 'f.created_at DESC, f.id DESC',
+    oldest: 'f.created_at ASC, f.id ASC',
+    lowest: 'f.rating ASC, f.created_at DESC, f.id DESC',
+    highest: 'f.rating DESC, f.created_at DESC, f.id DESC',
   };
   const sort = params.get('sort');
-  const clauses = ['site_id=?'];
-  const args = [id];
-  if (['1', '2', '3'].includes(rating)) { clauses.push('rating=?'); args.push(Number(rating)); }
+  const clauses = [];
+  const values = [...args];
+  if (siteId) { clauses.push('site_id=?'); values.push(siteId); }
+  else if (params.get('site')) { clauses.push('s.slug=?'); values.push(params.get('site')); }
+  if (['1', '2', '3'].includes(rating)) { clauses.push('rating=?'); values.push(Number(rating)); }
   if (status === 'unread' || status === 'read') clauses.push(status === 'unread' ? 'read_at IS NULL' : 'read_at IS NOT NULL');
-  const rows = await all(db, `SELECT id, rating, comment, guest_name, guest_place, source, created_at, read_at FROM site_feedback
-    WHERE ${clauses.join(' AND ')} ORDER BY ${Object.hasOwn(sorts, sort) ? sorts[sort] : sorts.recent} LIMIT 25 OFFSET ?`,
-    ...args, (page - 1) * 24);
+  const conditions = clauses.length ? ' AND ' + clauses.join(' AND ') : '';
+  const rows = await all(db, `SELECT f.id, f.rating, f.comment, f.guest_name, f.guest_place, f.source, f.created_at, f.read_at,
+    s.slug AS site_slug, s.name AS site_name FROM site_feedback f JOIN sites s ON s.id=f.site_id${filter || ' WHERE 1=1'}${conditions}
+    ORDER BY ${Object.hasOwn(sorts, sort) ? sorts[sort] : sorts.recent}, s.slug LIMIT 25 OFFSET ?`,
+    ...values, (page - 1) * 24);
   return json({ reviews: rows.slice(0, 24), page, hasMore: rows.length > 24 });
 }
 
@@ -1181,12 +1219,13 @@ async function api(request, url, env) {
     return passwordSettings(request, url, env, user, email, site);
   }
   if (url.pathname === '/api/overview' && method === 'GET') return json(await overview(db, user, url));
+  if (url.pathname === '/api/feedback' && method === 'GET') return feedbackInbox(db, url.searchParams, siteScope(user));
   if (url.pathname === '/api/sites' && method === 'GET') return json(await listSites(db, user));
   if (url.pathname === '/api/sites' && method === 'POST') {
     if (user.role !== 'owner') fail(403, 'Создавать сайты может владелец.');
     return json({ site: await saveSite(request, env) }, 201);
   }
-  const route = url.pathname.match(/^\/api\/sites\/([a-z0-9-]+)(?:\/(items|admins|tips|website|feedback|theme)(?:\/([^/]+))?)?$/);
+  const route = url.pathname.match(/^\/api\/sites\/([a-z0-9-]+)(?:\/(items|admins|tips|website|feedback|theme|guest)(?:\/([^/]+))?)?$/);
   if (!route) fail(404, 'Раздел не найден.');
   const [, slug, section, key] = route;
   const site = await allowedSite(db, user, slug);
@@ -1202,7 +1241,7 @@ async function api(request, url, env) {
     const unreadFeedback = (await q(db, 'SELECT COUNT(*) AS count FROM site_feedback WHERE site_id=? AND read_at IS NULL', site.id).first()).count;
     return json({ user, site: siteWithPhotos(site, true), items, menuOrderVersion: rows[0].menu_order_version, admins, tips, unreadFeedback });
   }
-  if (section === 'feedback' && !key && method === 'GET') return feedbackInbox(db, site.id, url.searchParams);
+  if (section === 'feedback' && !key && method === 'GET') return feedbackInbox(db, url.searchParams, { filter: '', args: [] }, site.id);
   if (section === 'feedback' && key && method === 'PUT') {
     if (!uuidPattern.test(key) || !await q(db, `UPDATE site_feedback SET read_at=COALESCE(read_at, ?)
       WHERE site_id=? AND id=? RETURNING id`, new Date().toISOString(), site.id, key).first()) fail(404, 'Отзыв не найден.');
@@ -1211,6 +1250,10 @@ async function api(request, url, env) {
   if (section === 'tips' && !key && method === 'PUT') {
     if (user.role !== 'owner') fail(403, 'Настройки чаевых доступны владельцу.');
     await saveTipSettings(env, site.id, await body(request));
+    return json({ ok: true });
+  }
+  if (section === 'guest' && !key && method === 'PUT') {
+    await saveGuestLayout(request, db, site);
     return json({ ok: true });
   }
   if (section === 'website' && !key && method === 'PUT') {
@@ -1494,9 +1537,11 @@ async function publicPage(request, url, env, assets, ctx) {
   if (section?.startsWith('go/')) {
     const column = Object.hasOwn(actionColumns, action) ? actionColumns[action] : null;
     const enabled = column && (action !== 'maps' || site.show_maps);
-    const destination = enabled && !JSON.parse(site.hidden_links ?? '[]').includes(column) ? site[column] : '';
+    const review = reviewProviders(site).includes(action);
+    const destination = review ? site[reviewColumns[action]] :
+      enabled && !JSON.parse(site.hidden_links ?? '[]').includes(column) ? site[column] : '';
     if (!destination) return shell(assets, null, 404, { view: 'missing' });
-    if (!previewAllowed && request.method === 'GET') await trackAnalytics(ctx, count(db, site, action, source));
+    if (!previewAllowed && request.method === 'GET') await trackAnalytics(ctx, count(db, site, review ? 'maps' : action, source));
     return redirect(destination);
   }
   const wantsMenu = section === 'menu';
@@ -1504,7 +1549,7 @@ async function publicPage(request, url, env, assets, ctx) {
     if (!previewAllowed && request.method === 'GET') await trackAnalytics(ctx, count(db, site, 'menu', source));
     return redirect(site.menu_url);
   }
-  const { nfc_key, website_url, hidden_links, ...publicSite } = siteWithPhotos(site, !!previewAllowed);
+  const { nfc_key, website_url, hidden_links, guest_version, yandex_review_url, google_review_url, ...publicSite } = siteWithPhotos(site, !!previewAllowed);
   for (const key of hidden_links) delete publicSite[key];
   if (!site.show_maps) delete publicSite.maps_url;
   if (site.show_hours === 0) delete publicSite.opening_hours;
@@ -1518,7 +1563,7 @@ async function publicPage(request, url, env, assets, ctx) {
     : [];
   const tips = wantsMenu ? [] : activeTips(await tipSettings(db, site.id), env);
   const response = shell(assets, { view: wantsMenu ? 'menu' : 'public', site: publicSite,
-    items: items.map((item) => itemWithPhoto(item, !!previewAllowed)), tips, query, draftPreview: site.status === 'draft' });
+    items: items.map((item) => itemWithPhoto(item, !!previewAllowed)), tips, reviewProviders: reviewProviders(site), query, draftPreview: site.status === 'draft' });
   if (!previewAllowed && request.method === 'GET') await trackAnalytics(ctx, count(db, site, wantsMenu ? 'menu' : 'visit', source));
   return response;
 }

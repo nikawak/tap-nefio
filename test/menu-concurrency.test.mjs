@@ -42,7 +42,7 @@ function fixture(t, onUpload) {
     return app.fetch(new Request(origin + path, { method, headers, body }), env);
   }
   const menu = async (role) => (await request(sitePath, { role })).json();
-  return { menu, photos, request };
+  return { db, menu, photos, request };
 }
 
 function fields(item, patch = {}) {
@@ -147,6 +147,12 @@ test('private feedback is scoped to the venue, facilitates retries, and can be m
   const inbox = sitePath + '/feedback';
   const sample = { id: crypto.randomUUID(), rating: 2, comment: 'Долго ждали заказ', guest_name: 'Саша', guest_place: 'У окна' };
   const send = (body, path = feedback) => request(path, { method: 'POST', body });
+  const { site } = await menu('manager');
+  const configure = (path, role) => request(path + '/guest', { method: 'PUT', role, version: 1,
+    body: { guest_order: site.guest_order, show_reviews: true, google_review_url: 'https://maps.google.com/' } });
+  assert.equal((await send(sample)).status, 404);
+  assert.equal((await configure(sitePath, 'manager')).status, 200);
+  assert.equal((await configure('/api/sites/basilico', 'owner')).status, 200);
   assert.equal((await send({ ...sample, rating: 5 })).status, 400);
   assert.equal((await send({ ...sample, comment: '   ' })).status, 400);
   assert.equal((await send(sample, '/api/feedback/forma-studio')).status, 404);
@@ -154,6 +160,7 @@ test('private feedback is scoped to the venue, facilitates retries, and can be m
   assert.equal((await send(sample)).status, 201);
   assert.equal((await send({ ...sample, id: crypto.randomUUID(), rating: 1, guest_name: '', guest_place: '' },
     '/api/feedback/moka-coffee')).status, 201);
+  assert.equal((await send(sample, '/api/feedback/basilico')).status, 201);
   assert.equal((await menu('manager')).unreadFeedback, 2);
   const get = async (query = '') => (await request(inbox + query, { role: 'manager' })).json();
   const { reviews } = await get('?sort=lowest');
@@ -168,8 +175,83 @@ test('private feedback is scoped to the venue, facilitates retries, and can be m
   assert.equal((await menu('manager')).unreadFeedback, 1);
   assert.equal((await get('?rating=2&status=unread')).reviews.length, 0);
   assert.equal((await get('?status=read')).reviews[0].id, sample.id);
+  const global = async (role, query = '') => (await (await request('/api/feedback' + query, { role })).json()).reviews;
+  assert.deepEqual((await global('manager', '?sort=lowest')).map(({ site_slug, rating }) => [site_slug, rating]), [['moka-coffee', 1], ['moka-coffee', 2]]);
+  assert.equal((await global('manager', '?site=basilico')).length, 0);
+  assert.deepEqual((await global('owner', '?site=basilico')).map(({ site_name }) => site_name), ['Basilico']);
+  assert.equal((await global('owner')).length, 3);
   assert.equal((await request('/moka-coffee')).status, 200);
   assert.equal((await request('/moka-coffee/go/maps')).status, 404);
+});
+
+test('guest blocks can be reordered by assigned administrators, and the rating requires an enabled link', async (t) => {
+  const { menu, request } = fixture(t);
+  const path = sitePath + '/guest';
+  const { site } = await menu('manager');
+  const guest_order = [...site.guest_order].reverse();
+  const put = (patch, version = 1) => request(path, { method: 'PUT', role: 'manager', version,
+    body: { guest_order, show_reviews: true, ...patch } });
+  const page = async () => {
+    const markup = await (await request('/moka-coffee')).text();
+    const model = JSON.parse(markup.match(/id="page-data">([^<]*)<\/script>/)[1]);
+    const app = { innerHTML: '', querySelector() { return null; } };
+    const elements = { '#app': app, '#modal': { addEventListener() {} }, '#page-data': { textContent: '{}' } };
+    runInNewContext(read('public/app.js').replace(/\bstart\(\);\s*$/, '') + '\nlanding(model);', { model, document: {
+      querySelector: (selector) => elements[selector], body: { classList: { add() {} } },
+    } });
+    return { model, markup: app.innerHTML };
+  };
+  assert.equal((await request('/api/sites/basilico/guest', { method: 'PUT', role: 'manager', version: 1, body: {} })).status, 404);
+  assert.equal((await put({ guest_order: guest_order.slice(1) })).status, 400);
+  assert.equal((await put({ yandex_review_url: 'javascript:void(0)' })).status, 400);
+  assert.equal((await put({})).status, 200);
+  assert.doesNotMatch((await page()).markup, /data-open-feedback/);
+  const yandex = 'https://yandex.by/maps/157/minsk/';
+  const google = 'https://maps.google.com/';
+  assert.equal((await put({ yandex_review_url: yandex })).status, 409);
+  assert.equal((await put({ yandex_review_url: yandex }, 2)).status, 200);
+  const visible = await page();
+  assert.deepEqual(visible.model.site.guest_order, guest_order);
+  assert.deepEqual(visible.model.reviewProviders, ['yandex']);
+  assert.match(visible.markup, /Telegram[\s\S]*data-open-feedback/);
+  assert.equal((await request('/moka-coffee/go/yandex')).headers.get('location'), yandex);
+  assert.equal((await request('/moka-coffee/go/google')).status, 404);
+  assert.equal((await put({ google_review_url: google }, 3)).status, 200);
+  assert.deepEqual((await page()).model.reviewProviders, ['yandex', 'google']);
+  assert.equal((await request('/moka-coffee/go/google')).headers.get('location'), google);
+  assert.equal((await put({ show_reviews: false }, 4)).status, 200);
+  const hidden = await page();
+  assert.doesNotMatch(hidden.markup, /data-open-feedback/);
+  assert.equal(hidden.model.site.google_review_url, undefined);
+  assert.equal((await request('/moka-coffee/go/yandex')).status, 404);
+  assert.equal((await menu('manager')).site.google_review_url, google);
+});
+
+test('the production demo migration fills coffe1 without overwriting existing content or other venues', async (t) => {
+  const { db, menu, request } = fixture(t);
+  const original = (await menu()).site;
+  const created = await request('/api/sites', { method: 'POST', body: {
+    slug: 'coffe1', name: 'Кофе 01', type: 'Кофейня', theme: 'coffee', currency: 'BYN', status: 'live',
+    website_url: 'https://example.test/', link_visibility: { website_url: true, maps_url: false, telegram_url: false, vk_url: false, instagram_url: false },
+  } });
+  assert.equal(created.status, 201);
+  assert.equal((await request('/api/sites/coffe1/items', { method: 'POST', body: {
+    name: 'Капучино', category: 'Кофе', price: 600, available: true,
+  } })).status, 201);
+  const fill = read('drizzle/0014_coffe1_demo.sql');
+  db.exec(fill);
+  assert.deepEqual((await menu()).site, original);
+  const model = JSON.parse((await (await request('/coffe1/menu')).text()).match(/id="page-data">([^<]*)<\/script>/)[1]);
+  assert.deepEqual(model.reviewProviders, ['yandex', 'google']);
+  assert.equal(model.site.website_url, 'https://example.test/');
+  assert.match(model.site.opening_hours, /^Демо:/);
+  assert.equal(model.site.wifi_name, 'Tap Coffee Demo');
+  assert.equal(model.site.show_menu, 1);
+  assert.equal(model.items[0].name, 'Капучино');
+  const { reviews } = await (await request('/api/feedback?site=coffe1')).json();
+  assert.equal(reviews.length, 3);
+  assert.ok(reviews.every(({ comment }) => comment.startsWith('Демо:')));
+  assert.equal(reviews.filter(({ read_at }) => read_at !== null).length, 1);
 });
 
 test('guest hours and Wi-Fi are optional and can be hidden without losing saved values', async (t) => {
@@ -325,12 +407,13 @@ test('catalogue preview and back preserve the theme until Apply is pressed', () 
   assert.equal(dialog.closed, true);
 });
 
-test('the rating dialog reveals private feedback for low scores and keeps the map action available', () => {
+test('the rating dialog reveals only configured public links and keeps private feedback for low scores', () => {
   const code = read('public/app.js').replace(/\bstart\(\);\s*$/, '');
   const listeners = {};
   const extra = { hidden: true };
   const thanks = { hidden: true };
-  const nodes = { '.feedback-extra': extra, '.feedback-thanks': thanks, '.form-error': {}, 'button[type="submit"]': {} };
+  const links = { hidden: true };
+  const nodes = { '.feedback-extra': extra, '.feedback-thanks': thanks, '.feedback-links': links, '.form-error': {}, 'button[type="submit"]': {} };
   const form = {
     elements: { comment: { required: false } },
     addEventListener(type, handler) { listeners[type] = handler; },
@@ -339,17 +422,26 @@ test('the rating dialog reveals private feedback for low scores and keeps the ma
   };
   const modal = { addEventListener() {}, setAttribute() {}, showModal() {}, querySelector: () => form };
   const elements = { '#app': {}, '#modal': modal, '#page-data': { textContent: '{}' } };
-  runInNewContext(code + '\nfeedbackDialog({site: {slug: "moka-coffee", show_maps: 1, maps_url: "https://maps.example.test/"}, query: "?nfc=moka-demo"});', {
+  const open = runInNewContext(code + '\nfeedbackDialog;', {
     document: { querySelector: (selector) => elements[selector] }, URLSearchParams,
   });
-  assert.match(modal.innerHTML, /href="\/moka-coffee\/go\/maps\?nfc=moka-demo"/);
+  const props = { site: { slug: 'moka-coffee' }, query: '?nfc=moka-demo' };
+  open({ ...props, reviewProviders: ['yandex', 'google'] });
+  assert.match(modal.innerHTML, /feedback-links" hidden/);
+  assert.match(modal.innerHTML, /href="\/moka-coffee\/go\/yandex\?nfc=moka-demo"[^>]*>.*Яндекс/);
+  assert.match(modal.innerHTML, /href="\/moka-coffee\/go\/google\?nfc=moka-demo"[^>]*>.*Google/);
   listeners.change({ target: { name: 'rating', value: '2' } });
   assert.equal(extra.hidden, false);
+  assert.equal(links.hidden, false);
   assert.equal(form.elements.comment.required, true);
-  listeners.change({ target: { name: 'rating', value: '5' } });
-  assert.equal(extra.hidden, true);
-  assert.equal(thanks.hidden, false);
-  assert.match(modal.innerHTML, /Оставить отзыв на картах/);
+  for (const rating of ['4', '5']) {
+    listeners.change({ target: { name: 'rating', value: rating } });
+    assert.equal(extra.hidden, true);
+    assert.equal(thanks.hidden, false);
+    assert.equal(links.hidden, false);
+  }
+  open({ ...props, reviewProviders: ['google'] });
+  assert.doesNotMatch(modal.innerHTML, /Яндекс/);
 });
 
 function withPhoto(data) {

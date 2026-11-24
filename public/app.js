@@ -53,6 +53,12 @@ const actionInfo = {
   menu: ['Открытия меню', 'book'], maps: ['Переходы к отзывам', 'star'],
   instagram: ['Instagram', 'instagram'], telegram: ['Telegram', 'telegram'], vk: ['ВКонтакте', 'social'],
 };
+const reviewLabels = { yandex: 'Яндекс', google: 'Google' };
+const guestBlockLabels = {
+  hours: 'Время работы', wifi: 'Гостевой Wi-Fi', menu: 'Меню', feedback: 'Оценить заведение',
+  maps: 'Карты и маршрут', website: 'Официальный сайт', tips: 'Чаевые',
+  telegram: 'Telegram', instagram: 'Instagram', vk: 'ВКонтакте',
+};
 const tipLinks = {
   alpha: '«нетмонет» · Альфа-Банк',
   moneyapp: 'MoneyApp · БСБ Банк',
@@ -107,6 +113,7 @@ async function api(path, options = {}) {
 function route() {
   const [, , root, slug, tab] = location.pathname.split('/');
   if (root === 'analytics') return { name: 'analytics', title: 'Аналитика' };
+  if (root === 'feedback') return { name: 'feedback', title: 'Отзывы' };
   if (root === 'sites' && slug) return { name: 'detail', title: state.details?.site?.name || 'Мини-сайт', slug, tab: tab || 'menu' };
   if (root === 'sites') return { name: 'sites', title: 'Мини-сайты' };
   return { name: 'overview', title: 'Обзор' };
@@ -116,6 +123,7 @@ const navigation = [
   ['overview', 'Обзор', 'home', '/admin'],
   ['sites', 'Мини-сайты', 'globe', '/admin/sites'],
   ['analytics', 'Аналитика', 'bars', '/admin/analytics'],
+  ['feedback', 'Отзывы', 'star', '/admin/feedback'],
 ];
 
 function structure(current, content) {
@@ -405,7 +413,7 @@ function openThemeCatalogue(opener) {
 
 const siteLinks = {
   website_url: ['Официальный сайт', 'https://example.com'],
-  maps_url: ['Отзывы на картах', 'https://…'],
+  maps_url: ['Карты и маршрут', 'https://…'],
   vk_url: ['ВКонтакте', 'vk.com/…'],
   telegram_url: ['Telegram', 't.me/…'],
   instagram_url: ['Instagram', 'instagram.com/…'],
@@ -474,6 +482,47 @@ function siteForm(site = {}) {
   </fieldset>
   <p class="form-error" role="alert"></p><div class="form-footer">${isNew ? button('Отмена', '', 'close-dialog', 'secondary') : ''}
   <button class="button primary" type="submit">${isNew ? 'Создать сайт' : 'Сохранить изменения'}</button></div></form>`;
+}
+
+function guestLayoutForm(site) {
+  const order = site.guest_order;
+  const enabled = !!site.show_reviews;
+  return `<section class="panel form-panel"><h2>Для гостей</h2>
+    <form id="guestLayoutForm" class="form-stack" data-version="${site.guest_version}">
+      <fieldset class="form-stack site-contact-fields"><legend>Порядок элементов</legend>
+        <p class="muted">Порядок применяется к включённым элементам на гостевой странице.</p>
+        <ol class="guest-order">${order.map((key, index) => `<li data-guest-block="${key}"><span>${guestBlockLabels[key]}</span>
+          <div class="heading-actions">
+            <button type="button" class="button secondary" data-guest-move="-1" aria-label="${guestBlockLabels[key]}: выше" ${index === 0 ? 'disabled' : ''}>Выше</button>
+            <button type="button" class="button secondary" data-guest-move="1" aria-label="${guestBlockLabels[key]}: ниже" ${index === order.length - 1 ? 'disabled' : ''}>Ниже</button>
+          </div></li>`).join('')}</ol>
+      </fieldset>
+      <fieldset class="form-stack site-contact-fields"><legend>Отзывы</legend>
+        ${siteOption('show_reviews', 'Показывать кнопку «Оценить заведение»', enabled, `<div class="form-stack">
+          <p class="muted">Кнопка появится после добавления хотя бы одной ссылки.</p>
+          <div class="form-grid">${Object.entries(reviewLabels).map(([key, label]) => `<label>${label}
+            <input name="${key}_review_url" type="url" maxlength="2048" placeholder="https://…" value="${html(site[key + '_review_url'])}" ${enabled ? '' : 'disabled'}>
+          </label>`).join('')}</div>
+        </div>`)}
+      </fieldset>
+      <p class="form-error" role="alert"></p>
+      <div class="form-footer"><button type="submit" class="button primary">Сохранить</button></div>
+    </form></section>`;
+}
+
+function moveGuestBlock(trigger) {
+  const row = trigger.closest('[data-guest-block]');
+  const up = trigger.dataset.guestMove === '-1';
+  const neighbor = up ? row.previousElementSibling : row.nextElementSibling;
+  if (!neighbor) return;
+  if (up) neighbor.before(row);
+  else neighbor.after(row);
+  const rows = [...row.parentElement.children];
+  rows.forEach((item, index) => {
+    item.querySelector('[data-guest-move="-1"]').disabled = index === 0;
+    item.querySelector('[data-guest-move="1"]').disabled = index === rows.length - 1;
+  });
+  (trigger.disabled ? row.querySelector('button:not(:disabled)') : trigger).focus();
 }
 
 function itemsContent(site, items) {
@@ -610,8 +659,8 @@ function reportUnavailable(showSites = false) {
     ${showSites ? '<a class="button primary" href="/admin/sites" data-nav>К мини-сайтам</a>' : ''}</section>`;
 }
 
-function feedbackContent(site, inbox) {
-  const { status, rating, sort } = state.feedbackQuery;
+function feedbackContent(inbox, sites) {
+  const { status, rating, sort, site = '' } = state.feedbackQuery;
   const options = (values, selected) => values.map(([value, label]) =>
     `<option value="${value}" ${selected === value ? 'selected' : ''}>${label}</option>`).join('');
   const format = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Minsk' });
@@ -619,6 +668,7 @@ function feedbackContent(site, inbox) {
     <div class="section-heading detail-heading"><div><h2>Отзывы гостей</h2><p>Приватные отзывы с оценками от 1 до 3.</p></div>
       ${button('Обновить', '', 'retry-load', 'secondary')}</div>
     <form id="feedbackFilters" class="panel feedback-filters form-stack">
+      ${sites ? `<label>Мини-сайт<select name="site">${options([['', 'Все мини-сайты'], ...sites.map(({ slug, name }) => [slug, html(name)])], site)}</select></label>` : ''}
       <label>Статус<select name="status">${options([['', 'Все'], ['unread', 'Непрочитанные'], ['read', 'Прочитанные']], status)}</select></label>
       <label>Оценка<select name="rating">${options([['', 'Любая'], ['1', '1 звезда'], ['2', '2 звезды'], ['3', '3 звезды']], rating)}</select></label>
       <label>Сортировка<select name="sort">${options([['recent', 'Сначала новые'], ['oldest', 'Сначала старые'], ['lowest', 'Сначала низкие оценки'], ['highest', 'Сначала высокие оценки']], sort)}</select></label>
@@ -629,8 +679,8 @@ function feedbackContent(site, inbox) {
         ${review.read_at ? '' : '<span class="status">Новый</span>'}</header>
       <p class="feedback-comment">${html(review.comment)}</p>
       <div class="feedback-meta"><span>${html(review.guest_name || 'Анонимно')}</span><span>${html(format.format(new Date(review.created_at)))} · Минск</span>
-        <span>${html(site.name)}${review.guest_place ? ' · ' + html(review.guest_place) : ''}</span><span>${review.source === 'nfc' ? 'Переход с NFC' : 'Открытие по ссылке'}</span></div>
-      ${review.read_at ? '' : `<button class="button secondary" type="button" data-action="feedback-read" data-id="${html(review.id)}">Отметить прочитанным</button>`}
+        <span>${html(review.site_name)}${review.guest_place ? ' · ' + html(review.guest_place) : ''}</span><span>${review.source === 'nfc' ? 'Переход с NFC' : 'Открытие по ссылке'}</span></div>
+      ${review.read_at ? '' : `<button class="button secondary" type="button" data-action="feedback-read" data-id="${html(review.id)}" data-slug="${html(review.site_slug)}">Отметить прочитанным</button>`}
     </article>`).join('') : '<div class="panel empty"><p>По этому фильтру отзывов пока нет.</p></div>'}
     ${inbox.page > 1 || inbox.hasMore ? `<div class="heading-actions feedback-pages">
       ${inbox.page > 1 ? button('Назад', '', 'feedback-previous', 'secondary') : ''}
@@ -644,6 +694,7 @@ function detailContent(current, bundle, analytics) {
   const base = '/admin/sites/' + site.slug;
   const owner = state.user.role === 'owner';
   const tabs = [['menu', 'Меню', 'book', base], ['feedback', 'Отзывы', 'star', base + '/feedback'], ['analytics', 'Статистика', 'bars', base + '/analytics'],
+    ['guest', 'Для гостей', 'globe', base + '/guest'],
     ...(owner ? [['settings', 'Настройки', 'settings', base + '/settings'], ['access', 'Доступ', 'users', base + '/access'], ['tips', 'Чаевые', 'star', base + '/tips']]
       : [['theme', 'Оформление', 'palette', base + '/theme']])];
   const active = tabs.some(([key]) => key === current.tab) ? current.tab : 'menu';
@@ -655,7 +706,8 @@ function detailContent(current, bundle, analytics) {
     ${button('Скопировать', 'copy', 'copy-nfc', 'secondary')}</div>
     <nav class="tabs" aria-label="Разделы сайта">${tabs.map(([key, label, icon, href]) => `<a data-nav href="${href}" class="${active === key ? 'selected' : ''}" ${active === key ? 'aria-current="page"' : ''}>${svg(icon, 18)}${label}${key === 'feedback' && unreadFeedback ? `<span class="feedback-badge" aria-label="Непрочитанных отзывов: ${nf.format(unreadFeedback)}">${nf.format(unreadFeedback)}</span>` : ''}</a>`).join('')}</nav>
     ${active === 'menu' ? itemsContent(site, items) : ''}
-    ${active === 'feedback' && inbox ? feedbackContent(site, inbox) : ''}
+    ${active === 'feedback' && inbox ? feedbackContent(inbox) : ''}
+    ${active === 'guest' ? guestLayoutForm(site) : ''}
     ${active === 'settings' ? `<section class="panel form-panel"><h2>Настройки страницы</h2>${siteForm(site)}</section>` : ''}
     ${active === 'theme' ? `<section class="panel form-panel"><h2>Оформление страницы</h2><form id="themeForm" class="form-stack">
       <input type="hidden" name="previous_theme" value="${html(site.theme)}">${themePicker(site.theme)}
@@ -673,12 +725,23 @@ function landing(model) {
   const base = '/' + site.slug;
   const isMenu = model.view === 'menu';
   const cover = !isMenu && (site.cover_photo_url || site.cover_url);
-  const social = [['telegram', 'Telegram'], ['instagram', 'Instagram'], ['vk', 'ВКонтакте']].filter(([key]) => site[key + '_url']);
+  const query = html(model.query);
   const label = site.type === 'Студия красоты' ? 'Смотреть услуги' : 'Открыть меню';
-  const contactButtons = `<button type="button" class="public-button" data-open-feedback aria-haspopup="dialog"><span>${svg('star')}Оценить заведение</span></button>
-    ${site.show_maps && site.maps_url ? `<a class="public-button" href="${base + '/go/maps' + html(model.query)}"><span>${svg('map')}Оставить отзыв на картах</span></a>` : ''}
-    ${site.show_website && site.website_url ? `<a class="public-button" href="${html(site.website_url)}" target="_blank" rel="noopener noreferrer"><span>${svg('globe')}Официальный сайт</span></a>` : ''}
-    ${model.tips?.length ? `<a class="public-button" target="_top" href="${base + '/tips' + html(model.query)}"><span>${tipIcon}Оставить чаевые</span></a>` : ''}`.trim();
+  const blocks = {
+    hours: !isMenu && site.show_hours !== 0 && site.opening_hours && `<dl class="guest-info"><dt>${svg('calendar')} Время работы</dt><dd>${html(site.opening_hours)}</dd></dl>`,
+    wifi: !isMenu && site.show_wifi !== 0 && (site.wifi_name || site.wifi_password) && `<dl class="guest-info"><dt>${svg('nfc')} Wi-Fi</dt>
+      ${site.wifi_name ? `<dd>Сеть · ${html(site.wifi_name)}</dd>` : ''}
+      ${site.wifi_password ? `<dd>Пароль · <code>${html(site.wifi_password)}</code></dd>` : ''}</dl>`,
+    menu: !isMenu && site.show_menu && `<a class="public-button main-action" href="${base}/menu${query}" ${site.menu_url ? 'target="_top"' : ''}><span>${svg('book')}${label}</span></a>`,
+    feedback: model.reviewProviders?.length && `<button type="button" class="public-button" data-open-feedback aria-haspopup="dialog"><span>${svg('star')}Оценить заведение</span></button>`,
+    maps: site.show_maps && site.maps_url && `<a class="public-button" href="${base}/go/maps${query}"><span>${svg('map')}Карты и маршрут</span></a>`,
+    website: site.show_website && site.website_url && `<a class="public-button" href="${html(site.website_url)}" target="_blank" rel="noopener noreferrer"><span>${svg('globe')}Официальный сайт</span></a>`,
+    tips: model.tips?.length && `<a class="public-button" target="_top" href="${base}/tips${query}"><span>${tipIcon}Оставить чаевые</span></a>`,
+  };
+  for (const key of ['telegram', 'instagram', 'vk']) {
+    blocks[key] = site[key + '_url'] && `<a class="public-button" href="${base}/go/${key}${query}"><span>${svg(actionInfo[key][1])}${guestBlockLabels[key]}</span></a>`;
+  }
+  const actions = (site.guest_order ?? Object.keys(blocks)).map((key) => blocks[key]).filter(Boolean).join('');
   const groups = new Map();
   for (const item of model.items) {
     if (!groups.has(item.category)) groups.set(item.category, []);
@@ -691,24 +754,13 @@ function landing(model) {
       <div class="public-hero-inner">${siteIcon(site, !isMenu)}<div class="public-identity"><p class="public-type">${html(site.type)}</p><h1>${html(site.name)}</h1>${site.description ? `<p class="public-description">${html(site.description)}</p>` : ''}</div></div>
     </section>
     <div class="public-content">
-      ${!isMenu && (site.opening_hours || site.wifi_name || site.wifi_password) ? `<dl class="guest-info">
-        ${site.opening_hours ? `<div><dt>${svg('calendar', 20)} Время работы</dt><dd>${html(site.opening_hours)}</dd></div>` : ''}
-        ${site.wifi_name || site.wifi_password ? `<div><dt>${svg('nfc', 20)} Wi-Fi</dt>
-          ${site.wifi_name ? `<dd>Сеть · ${html(site.wifi_name)}</dd>` : ''}
-          ${site.wifi_password ? `<dd>Пароль · <code>${html(site.wifi_password)}</code></dd>` : ''}</div>` : ''}
-      </dl>` : ''}
       ${isMenu ? `<div class="public-menu-heading"><h2>${site.type === 'Студия красоты' ? 'Услуги' : 'Меню'}</h2><a href="${base + html(model.query)}">Главная страница</a></div>
       ${groups.size ? [...groups].map(([category, items]) => `<section class="public-category"><h3>${html(category)}</h3><ul>${items.map((item) =>
         `<li><button class="public-item" type="button" data-menu-item="${html(item.id)}" aria-haspopup="dialog">
           <span class="public-item-copy"><strong>${html(item.name)}</strong>${item.description ? `<span class="public-item-summary">${html(item.description)}</span>` : ''}</span>
           <span class="public-item-price">${money(item.price, site.currency)}</span>
-        </button></li>`).join('')}</ul></section>`).join('') : '<p>Позиции появятся здесь позже.</p>'}`
-       : `<div class="public-actions">
-        ${site.show_menu ? `<a class="public-button main-action" href="${base + '/menu' + html(model.query)}" ${site.menu_url ? 'target="_top"' : ''}><span>${svg('book')}${label}</span></a>` : ''}
-        ${contactButtons}
-        </div>`}
-      ${isMenu && contactButtons ? `<div class="public-actions menu-contact-actions">${contactButtons}</div>` : ''}
-      ${social.length ? `<div class="public-socials">${social.map(([key, name]) => `<a href="${base + '/go/' + key + html(model.query)}">${svg(actionInfo[key][1], 18)}${name}</a>`).join('')}</div>` : ''}
+        </button></li>`).join('')}</ul></section>`).join('') : '<p>Позиции появятся здесь позже.</p>'}` : ''}
+      ${actions ? `<div class="public-actions${isMenu ? ' menu-contact-actions' : ''}">${actions}</div>` : ''}
     </div>
     <footer class="public-footer">${svg('nfc', 18)} Сделано в Тап.</footer>
   </main>`;
@@ -723,13 +775,12 @@ function landing(model) {
   }
 }
 
-function feedbackDialog({ site, query }) {
+function feedbackDialog({ site, query, reviewProviders }) {
   const preview = new URLSearchParams(query).has('preview');
   showModal('Оцените заведение', `<form id="guestFeedbackForm" class="form-stack" method="post">
     <fieldset class="feedback-stars"><legend class="sr-only">Оценка от 1 до 5</legend>
       ${[1, 2, 3, 4, 5].map((rating) => `<label><input class="sr-only" name="rating" type="radio" value="${rating}" aria-label="${rating} из 5"><span>${svg('star', 26)}</span></label>`).join('')}
     </fieldset>
-    ${site.show_maps && site.maps_url ? `<a class="public-button" href="/${site.slug}/go/maps${html(query)}"><span>${svg('map', 20)}Оставить отзыв на картах</span>${svg('external', 18)}</a>` : ''}
     <p class="feedback-thanks" hidden>Спасибо за оценку</p>
     <div class="feedback-extra form-stack" hidden>
       <label>Что вам не понравилось?<textarea name="comment" rows="5" maxlength="2000" placeholder="Расскажите, что можно улучшить"></textarea></label>
@@ -740,11 +791,15 @@ function feedbackDialog({ site, query }) {
       <small>${preview ? 'Предпросмотр формы' : 'Отзыв и указанные данные увидит администратор заведения.'}</small>
       <button class="public-button main-action" type="submit" ${preview ? 'disabled' : ''}>Отправить заведению</button>
     </div>
+    <div class="public-actions feedback-links" hidden>
+      ${reviewProviders.map((key) => `<a class="public-button" href="/${site.slug}/go/${key}${html(query)}" target="_blank" rel="noopener noreferrer"><span>${svg('map')}${reviewLabels[key]}</span></a>`).join('')}
+    </div>
     <p class="form-error" role="alert"></p>
   </form>`, 'feedback-dialog');
   const form = modal.querySelector('#guestFeedbackForm');
   const extra = form.querySelector('.feedback-extra');
   const thanks = form.querySelector('.feedback-thanks');
+  const links = form.querySelector('.feedback-links');
   const error = form.querySelector('.form-error');
   const submit = form.querySelector('button[type="submit"]');
   let id;
@@ -756,6 +811,7 @@ function feedbackDialog({ site, query }) {
     extra.hidden = rating > 3;
     form.elements.comment.required = !extra.hidden;
     thanks.hidden = rating <= 3;
+    links.hidden = false;
     error.textContent = '';
   });
   form.addEventListener('submit', async (event) => {
@@ -1156,14 +1212,16 @@ async function load() {
   state.statsFailed = false;
   render();
 
-  if (current.name === 'sites' || current.name === 'detail') {
-    const path = current.name === 'sites' ? '/api/sites' : '/api/sites/' + current.slug;
+  if (['sites', 'detail', 'feedback'].includes(current.name)) {
+    const path = current.name === 'detail' ? '/api/sites/' + current.slug : '/api/sites';
+    const inboxPath = current.name === 'feedback' ? '/api/feedback' : current.tab === 'feedback' ? path + '/feedback' : '';
     try {
       const [result, inbox] = await Promise.all([api(path, { signal }),
-        current.tab === 'feedback' ? api(path + '/feedback?' + new URLSearchParams(state.feedbackQuery), { signal }) : null]);
+        inboxPath ? api(inboxPath + '?' + new URLSearchParams(state.feedbackQuery), { signal }) : null]);
       if (signal.aborted) return;
       state.user = result.user;
       if (current.name === 'sites') state.data = result;
+      else if (current.name === 'feedback') state.data = { ...result, inbox };
       else state.details = { ...result, inbox };
     } catch (error) {
       if (signal.aborted) return;
@@ -1201,7 +1259,8 @@ function render() {
   } else if (statsFailed) {
     content = reportUnavailable(true);
   } else if (data) {
-    content = current.name === 'overview' ? overviewContent(data) : current.name === 'analytics' ? analyticsContent(data) : sitesContent(data);
+    content = current.name === 'overview' ? overviewContent(data) : current.name === 'analytics' ? analyticsContent(data) :
+      current.name === 'feedback' ? `<div class="page-heading"><h1>Отзывы</h1></div>${feedbackContent(data.inbox, data.sites)}` : sitesContent(data);
   }
   clearPhotoPreviews(app);
   cancelMenuDrag();
@@ -1209,6 +1268,7 @@ function render() {
 }
 
 function navigate(href) {
+  if (href !== location.pathname) state.feedbackQuery.page = 1;
   history.pushState({}, '', href);
   state.mobileNav = false;
   state.showAccount = false;
@@ -1330,6 +1390,11 @@ async function onClick(event) {
     selectPhoto(clearPhoto.closest('[data-photo-editor]'), null);
     return;
   }
+  const guestMove = event.target.closest('[data-guest-move]');
+  if (guestMove) {
+    moveGuestBlock(guestMove);
+    return;
+  }
   const nav = event.target.closest('a[data-nav]');
   if (nav && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
     event.preventDefault();
@@ -1359,11 +1424,12 @@ async function onClick(event) {
     return;
   }
   if (action === 'feedback-read') {
-    const slug = state.details.site.slug;
+    const { slug, id } = trigger.dataset;
     trigger.disabled = true;
     try {
-      await api('/api/sites/' + slug + '/feedback/' + encodeURIComponent(trigger.dataset.id), { method: 'PUT' });
-      if (route().slug === slug && route().tab === 'feedback') await load();
+      await api('/api/sites/' + encodeURIComponent(slug) + '/feedback/' + encodeURIComponent(id), { method: 'PUT' });
+      const current = route();
+      if (current.name === 'feedback' || (current.slug === slug && current.tab === 'feedback')) await load();
     } catch (failure) {
       toast(failure.message, 'close');
     } finally {
@@ -1449,11 +1515,11 @@ async function onSubmit(event) {
   const form = event.target;
   if (form.id === 'feedbackFilters') {
     event.preventDefault();
-    state.feedbackQuery = { ...Object.fromEntries(new FormData(form)), page: 1 };
+    state.feedbackQuery = { ...state.feedbackQuery, ...Object.fromEntries(new FormData(form)), page: 1 };
     await load();
     return;
   }
-  if (!['siteForm', 'itemForm', 'adminForm', 'removeForm', 'tipsForm', 'menuLinkForm', 'menuImportForm', 'themeForm'].includes(form.id)) return;
+  if (!['siteForm', 'itemForm', 'adminForm', 'removeForm', 'tipsForm', 'menuLinkForm', 'menuImportForm', 'themeForm', 'guestLayoutForm'].includes(form.id)) return;
   event.preventDefault();
   const submit = form.querySelector('button[type="submit"], button:not([type])');
   const error = form.querySelector('.form-error');
@@ -1463,6 +1529,12 @@ async function onSubmit(event) {
   submit.disabled = true;
   error.textContent = '';
   try {
+    if (form.id === 'guestLayoutForm') {
+      const guest_order = [...form.querySelectorAll('[data-guest-block]')].map((row) => row.dataset.guestBlock);
+      await api(base + '/guest', { method: 'PUT', version: form.dataset.version,
+        body: { ...data, guest_order, show_reviews: form.elements.show_reviews.checked } });
+      toast('Гостевая страница обновлена');
+    }
     if (form.id === 'themeForm') {
       await api(base + '/theme', { method: 'PUT', body: data });
       toast('Тема сохранена');
@@ -1591,7 +1663,7 @@ async function start() {
       const sites = state.data.sites.filter((site) => (site.name + ' ' + site.slug + ' ' + site.type).toLowerCase().includes(value));
       document.querySelector('#searchResults').innerHTML = sites.length ? siteCards(sites) : '<div class="panel empty"><h3>Ничего не найдено</h3><p>Попробуйте другой запрос.</p></div>';
     });
-    window.addEventListener('popstate', () => { state.showAccount = false; state.mobileNav = false; load(); });
+    window.addEventListener('popstate', () => { state.showAccount = false; state.mobileNav = false; state.feedbackQuery.page = 1; load(); });
     await load();
   } catch (error) {
     notice('Не удалось открыть панель', error.message);
