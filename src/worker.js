@@ -511,13 +511,15 @@ function address(data, key, image = false) {
 function siteLinks(data, site) {
   const visible = data.link_visibility;
   if (visible === undefined) {
-    return { ...Object.fromEntries(contactColumns.map((key) => [key, address(data, key)])),
+    return { ...Object.fromEntries(contactColumns.map((key) => [key, key === 'maps_url' && data[key] === undefined ? null : address(data, key)])),
       website_url: null, show_website: null, hidden_links: null, show_maps: null };
   }
-  if (!visible || [...contactColumns, 'website_url'].some((key) => typeof visible[key] !== 'boolean')) {
+  if (!visible || [...contactColumns, 'website_url'].some((key) =>
+    (key !== 'maps_url' || visible[key] !== undefined) && typeof visible[key] !== 'boolean')) {
     fail(400, 'Проверьте, какие ссылки включены.');
   }
   const contacts = Object.fromEntries(contactColumns.map((key) => {
+    if (key === 'maps_url' && visible[key] === undefined) return [key, null];
     const value = visible[key] ? address(data, key) : site?.[key] ?? '';
     if (visible[key] && !value) fail(400, 'Введите адрес для каждой включённой ссылки.');
     return [key, value];
@@ -525,7 +527,8 @@ function siteLinks(data, site) {
   const website = visible.website_url ? httpsLink(field(data, 'website_url', 2048)) : null;
   if (visible.website_url && !website) fail(400, 'Введите полную HTTPS-ссылку на официальный сайт.');
   return { ...contacts, website_url: website?.href ?? null, show_website: Number(visible.website_url),
-    hidden_links: JSON.stringify(contactColumns.filter((key) => !visible[key])), show_maps: Number(visible.maps_url) };
+    hidden_links: JSON.stringify(contactColumns.filter((key) => visible[key] === false)),
+    show_maps: visible.maps_url === undefined ? null : Number(visible.maps_url) };
 }
 
 function guestInfoFields(data) {
@@ -675,7 +678,7 @@ async function saveSite(request, env, site) {
     }
     if (site) {
       const result = await q(db, `UPDATE sites SET name=?, type=?, description=?, theme=?, logo_url=?, cover_url=?, currency=?, status=?,
-        maps_url=?, telegram_url=?, instagram_url=?, vk_url=?, website_url=COALESCE(?, website_url),
+        maps_url=COALESCE(?, maps_url), telegram_url=?, instagram_url=?, vk_url=?, website_url=COALESCE(?, website_url),
         show_website=COALESCE(?, show_website), hidden_links=COALESCE(?, hidden_links), show_maps=COALESCE(?, show_maps),
         opening_hours=COALESCE(?, opening_hours), wifi_name=COALESCE(?, wifi_name), wifi_password=COALESCE(?, wifi_password),
         show_hours=COALESCE(?, show_hours), show_wifi=COALESCE(?, show_wifi), logo_key=?, cover_key=?
@@ -687,7 +690,7 @@ async function saveSite(request, env, site) {
       await q(db, `INSERT INTO sites (id, slug, name, type, description, theme, logo_url, cover_url, currency, status,
         maps_url, telegram_url, instagram_url, vk_url, website_url, show_website, hidden_links, show_maps,
         opening_hours, wifi_name, wifi_password, show_hours, show_wifi, nfc_key, created_at, logo_key, cover_key)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ''), COALESCE(?, 0), COALESCE(?, '[]'), COALESCE(?, 0),
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ''), ?, ?, ?, COALESCE(?, ''), COALESCE(?, 0), COALESCE(?, '[]'), COALESCE(?, 0),
           COALESCE(?, ''), COALESCE(?, ''), COALESCE(?, ''), ?, ?, ?, ?, ?, ?)`,
         newId(), slug, ...Object.values(fields), newId(), new Date().toISOString(), keys.logo, keys.cover).run();
     }
@@ -1054,22 +1057,28 @@ async function saveGuestLayout(request, db, site) {
   const data = await body(request);
   const enabled = optionalFlag(data, 'show_reviews');
   const order = data.guest_order;
-  if (enabled == null || !Array.isArray(order) || order.length !== guestBlocks.length ||
-      new Set(order).size !== guestBlocks.length || order.some((key) => !guestBlocks.includes(key))) {
-    fail(400, 'Проверьте порядок элементов и настройку отзывов.');
+  if (order !== undefined && (!Array.isArray(order) || order.length !== guestBlocks.length ||
+      new Set(order).size !== guestBlocks.length || order.some((key) => !guestBlocks.includes(key)))) {
+    fail(400, 'Проверьте порядок элементов для гостей.');
   }
+  const maps = data.maps_url === undefined ? null : address(data, 'maps_url');
   const links = Object.values(reviewColumns).map((column) => {
-    if (data[column] === undefined) return site[column];
+    if (data[column] === undefined) return null;
     const value = field(data, column, 2048);
     if (!value) return '';
     const url = httpsLink(value);
     if (!url) fail(400, 'Укажите полную HTTPS-ссылку для отзывов.');
     return url.href;
   });
-  if (!await q(db, `UPDATE sites SET guest_order=?, show_reviews=?, yandex_review_url=?, google_review_url=?,
+  if (order === undefined && enabled === null && maps === null && links.every((link) => link === null)) {
+    fail(400, 'Укажите настройки гостевой страницы.');
+  }
+  if (!await q(db, `UPDATE sites SET guest_order=COALESCE(?, guest_order), show_reviews=COALESCE(?, show_reviews),
+    yandex_review_url=COALESCE(?, yandex_review_url), google_review_url=COALESCE(?, google_review_url),
+    maps_url=COALESCE(?, maps_url), show_maps=COALESCE(?, show_maps),
     guest_version=guest_version+1 WHERE id=? AND guest_version=? RETURNING id`,
-    JSON.stringify(order), enabled, ...links, site.id, version).first()) {
-    fail(409, 'Порядок или настройки отзывов уже изменились. Обновите страницу и повторите действие.');
+    order === undefined ? null : JSON.stringify(order), enabled, ...links, maps, maps === null ? null : Number(!!maps), site.id, version).first()) {
+    fail(409, 'Настройки гостевой страницы уже изменились. Обновите страницу и повторите действие.');
   }
 }
 
@@ -1539,7 +1548,7 @@ async function publicPage(request, url, env, assets, ctx) {
     const enabled = column && (action !== 'maps' || site.show_maps);
     const review = reviewProviders(site).includes(action);
     const destination = review ? site[reviewColumns[action]] :
-      enabled && !JSON.parse(site.hidden_links ?? '[]').includes(column) ? site[column] : '';
+      enabled && (action === 'maps' || !JSON.parse(site.hidden_links ?? '[]').includes(column)) ? site[column] : '';
     if (!destination) return shell(assets, null, 404, { view: 'missing' });
     if (!previewAllowed && request.method === 'GET') await trackAnalytics(ctx, count(db, site, review ? 'maps' : action, source));
     return redirect(destination);
@@ -1550,7 +1559,7 @@ async function publicPage(request, url, env, assets, ctx) {
     return redirect(site.menu_url);
   }
   const { nfc_key, website_url, hidden_links, guest_version, yandex_review_url, google_review_url, ...publicSite } = siteWithPhotos(site, !!previewAllowed);
-  for (const key of hidden_links) delete publicSite[key];
+  for (const key of hidden_links) if (key !== 'maps_url') delete publicSite[key];
   if (!site.show_maps) delete publicSite.maps_url;
   if (site.show_hours === 0) delete publicSite.opening_hours;
   if (site.show_wifi === 0) {

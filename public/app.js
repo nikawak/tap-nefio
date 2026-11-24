@@ -35,7 +35,7 @@ const icons = {
   coffee: '<path d="M5 9h11v5a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4zm11 1h2a2 2 0 1 1 0 4h-2M3 21h16M8 3v3m4-3v3"/>',
   leaf: '<path d="M20 4c-7 0-13 3-13 9a5 5 0 0 0 5 5c6 0 9-6 8-14ZM4 21c2-5 5-7 9-10"/>',
   palette: '<path d="M12 3a9 9 0 0 0 0 18h1.5a2 2 0 0 0 1.5-3.3 1.6 1.6 0 0 1 1.2-2.7H18a3 3 0 0 0 3-3 9 9 0 0 0-9-9Z"/><path d="M7.5 10h.01M10 6.8h.01M14 6.8h.01M17 10h.01" stroke-width="2.5"/>',
-  social: '<circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="m8.2 11 7.6-4m-7.6 6 7.6 4"/>',
+  vk: '<path fill="currentColor" stroke="none" d="M6.79 7.3H4.05c.13 6.24 3.25 9.99 8.72 9.99h.31v-3.57c2.01.2 3.53 1.67 4.14 3.57h2.84c-.78-2.84-2.83-4.41-4.11-5.01 1.28-.74 3.08-2.54 3.51-4.98h-2.58c-.56 1.98-2.22 3.78-3.8 3.95V7.3H10.5v6.92c-1.6-.4-3.62-2.34-3.71-6.92Z"/>',
   telegram: '<path d="m3 11 17-7-3 16-6-5-3 3v-5zM8 13l7-5"/>',
   instagram: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17" cy="7" r="1" fill="currentColor" stroke="none"/>',
   map: '<path d="M19 10c0 5-7 10.5-7 10.5S5 15 5 10a7 7 0 0 1 14 0Z"/><circle cx="12" cy="10" r="2"/>',
@@ -51,7 +51,7 @@ const money = (value, currency) => new Intl.NumberFormat('ru-RU', { style: 'curr
 const dateLabel = (value, options) => new Intl.DateTimeFormat('ru-RU', { ...options, timeZone: 'UTC' }).format(new Date(value + 'T00:00:00Z')).replace('.', '');
 const actionInfo = {
   menu: ['Открытия меню', 'book'], maps: ['Переходы к отзывам', 'star'],
-  instagram: ['Instagram', 'instagram'], telegram: ['Telegram', 'telegram'], vk: ['ВКонтакте', 'social'],
+  instagram: ['Instagram', 'instagram'], telegram: ['Telegram', 'telegram'], vk: ['ВКонтакте', 'vk'],
 };
 const reviewLabels = { yandex: 'Яндекс', google: 'Google' };
 const guestBlockLabels = {
@@ -413,7 +413,6 @@ function openThemeCatalogue(opener) {
 
 const siteLinks = {
   website_url: ['Официальный сайт', 'https://example.com'],
-  maps_url: ['Карты и маршрут', 'https://…'],
   vk_url: ['ВКонтакте', 'vk.com/…'],
   telegram_url: ['Telegram', 't.me/…'],
   instagram_url: ['Instagram', 'instagram.com/…'],
@@ -428,7 +427,7 @@ function siteOption(name, label, enabled, fields) {
 
 function siteLinkOption(site, key, label, placeholder) {
   const enabled = key === 'website_url' ? !!site.show_website :
-    !!site[key] && !site.hidden_links?.includes(key) && (key !== 'maps_url' || !!site.show_maps);
+    !!site[key] && !site.hidden_links?.includes(key);
   return siteOption('enable_' + key, label, enabled, `<label>
       <span class="sr-only">Ссылка · ${label}</span>
       <input name="${key}" ${key === 'website_url' ? 'type="url"' : 'inputmode="url"'}
@@ -486,9 +485,12 @@ function siteForm(site = {}) {
 
 function guestLayoutForm(site) {
   const order = site.guest_order;
-  const enabled = !!site.show_reviews;
   return `<section class="panel form-panel"><h2>Для гостей</h2>
     <form id="guestLayoutForm" class="form-stack" data-version="${site.guest_version}">
+      <fieldset class="form-stack site-contact-fields"><legend>Карты и маршрут</legend>
+        <label>Ссылка на карты<input name="maps_url" type="url" maxlength="2048" placeholder="https://…" value="${site.show_maps ? html(site.maps_url) : ''}"></label>
+        <p class="muted">Чтобы скрыть кнопку маршрута, оставьте поле пустым.</p>
+      </fieldset>
       <fieldset class="form-stack site-contact-fields"><legend>Порядок элементов</legend>
         <p class="muted">Порядок применяется к включённым элементам на гостевой странице.</p>
         <ol class="guest-order">${order.map((key, index) => `<li data-guest-block="${key}"><span>${guestBlockLabels[key]}</span>
@@ -497,17 +499,24 @@ function guestLayoutForm(site) {
             <button type="button" class="button secondary" data-guest-move="1" aria-label="${guestBlockLabels[key]}: ниже" ${index === order.length - 1 ? 'disabled' : ''}>Ниже</button>
           </div></li>`).join('')}</ol>
       </fieldset>
-      <fieldset class="form-stack site-contact-fields"><legend>Отзывы</legend>
-        ${siteOption('show_reviews', 'Показывать кнопку «Оценить заведение»', enabled, `<div class="form-stack">
-          <p class="muted">Кнопка появится после добавления хотя бы одной ссылки.</p>
-          <div class="form-grid">${Object.entries(reviewLabels).map(([key, label]) => `<label>${label}
-            <input name="${key}_review_url" type="url" maxlength="2048" placeholder="https://…" value="${html(site[key + '_review_url'])}" ${enabled ? '' : 'disabled'}>
-          </label>`).join('')}</div>
-        </div>`)}
-      </fieldset>
       <p class="form-error" role="alert"></p>
       <div class="form-footer"><button type="submit" class="button primary">Сохранить</button></div>
     </form></section>`;
+}
+
+function reviewSettings(site) {
+  const enabled = !!site.show_reviews;
+  return `<details class="panel form-panel feedback-settings"><summary>Настройки отзывов</summary>
+    <form id="reviewSettingsForm" class="form-stack" data-version="${site.guest_version}">
+      ${siteOption('show_reviews', 'Показывать кнопку «Оценить заведение»', enabled, `<div class="form-stack">
+        <p class="muted">Кнопка появится после добавления хотя бы одной ссылки.</p>
+        <div class="form-grid">${Object.entries(reviewLabels).map(([key, label]) => `<label>${label}
+          <input name="${key}_review_url" type="url" maxlength="2048" placeholder="https://…" value="${html(site[key + '_review_url'])}" ${enabled ? '' : 'disabled'}>
+        </label>`).join('')}</div>
+      </div>`)}
+      <p class="form-error" role="alert"></p>
+      <div class="form-footer"><button type="submit" class="button primary">Сохранить</button></div>
+    </form></details>`;
 }
 
 function moveGuestBlock(trigger) {
@@ -706,7 +715,7 @@ function detailContent(current, bundle, analytics) {
     ${button('Скопировать', 'copy', 'copy-nfc', 'secondary')}</div>
     <nav class="tabs" aria-label="Разделы сайта">${tabs.map(([key, label, icon, href]) => `<a data-nav href="${href}" class="${active === key ? 'selected' : ''}" ${active === key ? 'aria-current="page"' : ''}>${svg(icon, 18)}${label}${key === 'feedback' && unreadFeedback ? `<span class="feedback-badge" aria-label="Непрочитанных отзывов: ${nf.format(unreadFeedback)}">${nf.format(unreadFeedback)}</span>` : ''}</a>`).join('')}</nav>
     ${active === 'menu' ? itemsContent(site, items) : ''}
-    ${active === 'feedback' && inbox ? feedbackContent(inbox) : ''}
+    ${active === 'feedback' && inbox ? reviewSettings(site) + feedbackContent(inbox) : ''}
     ${active === 'guest' ? guestLayoutForm(site) : ''}
     ${active === 'settings' ? `<section class="panel form-panel"><h2>Настройки страницы</h2>${siteForm(site)}</section>` : ''}
     ${active === 'theme' ? `<section class="panel form-panel"><h2>Оформление страницы</h2><form id="themeForm" class="form-stack">
@@ -729,9 +738,14 @@ function landing(model) {
   const label = site.type === 'Студия красоты' ? 'Смотреть услуги' : 'Открыть меню';
   const blocks = {
     hours: !isMenu && site.show_hours !== 0 && site.opening_hours && `<dl class="guest-info"><dt>${svg('calendar')} Время работы</dt><dd>${html(site.opening_hours)}</dd></dl>`,
-    wifi: !isMenu && site.show_wifi !== 0 && (site.wifi_name || site.wifi_password) && `<dl class="guest-info"><dt>${svg('nfc')} Wi-Fi</dt>
-      ${site.wifi_name ? `<dd>Сеть · ${html(site.wifi_name)}</dd>` : ''}
-      ${site.wifi_password ? `<dd>Пароль · <code>${html(site.wifi_password)}</code></dd>` : ''}</dl>`,
+    wifi: !isMenu && site.show_wifi !== 0 && (site.wifi_name || site.wifi_password) && `<details class="guest-wifi">
+      <summary class="public-button"><span>${svg('nfc')}Wi-Fi</span>${svg('chevron')}</summary>
+      <div class="guest-wifi-info"><dl class="guest-info">
+        ${site.wifi_name ? `<div><dt>Сеть</dt><dd>${html(site.wifi_name)}</dd></div>` : ''}
+        ${site.wifi_password ? `<div><dt>Пароль</dt><dd><code>${html(site.wifi_password)}</code></dd></div>` : ''}
+      </dl>
+      ${site.wifi_password ? '<button type="button" class="public-button" data-copy-wifi>Скопировать пароль</button>' : ''}
+      <p>Откройте настройки Wi-Fi на телефоне и выберите гостевую сеть.</p></div></details>`,
     menu: !isMenu && site.show_menu && `<a class="public-button main-action" href="${base}/menu${query}" ${site.menu_url ? 'target="_top"' : ''}><span>${svg('book')}${label}</span></a>`,
     feedback: model.reviewProviders?.length && `<button type="button" class="public-button" data-open-feedback aria-haspopup="dialog"><span>${svg('star')}Оценить заведение</span></button>`,
     maps: site.show_maps && site.maps_url && `<a class="public-button" href="${base}/go/maps${query}"><span>${svg('map')}Карты и маршрут</span></a>`,
@@ -739,7 +753,8 @@ function landing(model) {
     tips: model.tips?.length && `<a class="public-button" target="_top" href="${base}/tips${query}"><span>${tipIcon}Оставить чаевые</span></a>`,
   };
   for (const key of ['telegram', 'instagram', 'vk']) {
-    blocks[key] = site[key + '_url'] && `<a class="public-button" href="${base}/go/${key}${query}"><span>${svg(actionInfo[key][1])}${guestBlockLabels[key]}</span></a>`;
+    const name = guestBlockLabels[key];
+    blocks[key] = site[key + '_url'] && `<a class="public-social" href="${base}/go/${key}${query}" aria-label="${name}" title="${name}">${svg(actionInfo[key][1], 24)}</a>`;
   }
   const actions = (site.guest_order ?? Object.keys(blocks)).map((key) => blocks[key]).filter(Boolean).join('');
   const groups = new Map();
@@ -765,6 +780,10 @@ function landing(model) {
     <footer class="public-footer">${svg('nfc', 18)} Сделано в Тап.</footer>
   </main>`;
   app.querySelector('[data-open-feedback]')?.addEventListener('click', () => feedbackDialog(model));
+  app.querySelector('[data-copy-wifi]')?.addEventListener('click', async () => {
+    try { await copy(site.wifi_password); toast('Пароль скопирован'); }
+    catch (error) { toast(error.message, 'close'); }
+  });
   if (isMenu) {
     app.addEventListener('click', (event) => {
       const button = event.target.closest('[data-menu-item]');
@@ -1205,7 +1224,11 @@ async function load() {
   activeLoad?.abort();
   activeLoad = new AbortController();
   const { signal } = activeLoad;
-  const current = route();
+  let current = route();
+  if (current.tab === 'access' && state.user.role !== 'owner') {
+    history.replaceState({}, '', '/admin/sites/' + current.slug);
+    current = route();
+  }
   state.data = null;
   state.details = null;
   state.loadError = '';
@@ -1519,7 +1542,7 @@ async function onSubmit(event) {
     await load();
     return;
   }
-  if (!['siteForm', 'itemForm', 'adminForm', 'removeForm', 'tipsForm', 'menuLinkForm', 'menuImportForm', 'themeForm', 'guestLayoutForm'].includes(form.id)) return;
+  if (!['siteForm', 'itemForm', 'adminForm', 'removeForm', 'tipsForm', 'menuLinkForm', 'menuImportForm', 'themeForm', 'guestLayoutForm', 'reviewSettingsForm'].includes(form.id)) return;
   event.preventDefault();
   const submit = form.querySelector('button[type="submit"], button:not([type])');
   const error = form.querySelector('.form-error');
@@ -1530,10 +1553,15 @@ async function onSubmit(event) {
   error.textContent = '';
   try {
     if (form.id === 'guestLayoutForm') {
-      const guest_order = [...form.querySelectorAll('[data-guest-block]')].map((row) => row.dataset.guestBlock);
-      await api(base + '/guest', { method: 'PUT', version: form.dataset.version,
-        body: { ...data, guest_order, show_reviews: form.elements.show_reviews.checked } });
+      data.guest_order = [...form.querySelectorAll('[data-guest-block]')].map((row) => row.dataset.guestBlock);
+      if (data.maps_url === form.elements.maps_url.defaultValue) delete data.maps_url;
+      await api(base + '/guest', { method: 'PUT', version: form.dataset.version, body: data });
       toast('Гостевая страница обновлена');
+    }
+    if (form.id === 'reviewSettingsForm') {
+      data.show_reviews = form.elements.show_reviews.checked;
+      await api(base + '/guest', { method: 'PUT', version: form.dataset.version, body: data });
+      toast('Настройки отзывов сохранены');
     }
     if (form.id === 'themeForm') {
       await api(base + '/theme', { method: 'PUT', body: data });

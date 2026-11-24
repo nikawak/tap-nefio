@@ -114,6 +114,7 @@ test('the panel requests statistics only for reports and keeps the site tabs vis
   const document = { querySelector: (selector) => ({ '#app': app, '#modal': modal, '#page-data': { textContent: '{}' } }[selector]) };
   const browser = {
     document, location, URLSearchParams, FormData, AbortController,
+    history: { replaceState: (_state, _title, path) => { location.pathname = path; } },
     fetch: async (path) => {
       requested.push(path);
       if (path === '/api/sites') return Response.json({ user: manager, sites: [site] });
@@ -131,8 +132,9 @@ test('the panel requests statistics only for reports and keeps the site tabs vis
   assert.match(app.innerHTML, /Moka Coffee/);
   assert.match(app.innerHTML, /Создание и удаление мини-сайтов, выдачу и отзыв доступа согласовывайте с владельцем платформы/);
   assert.doesNotMatch(app.innerHTML, /data-action="new-site"/);
-  location.pathname = '/admin/sites/moka-coffee';
+  location.pathname = '/admin/sites/moka-coffee/access';
   await load();
+  assert.equal(location.pathname, '/admin/sites/moka-coffee');
   assert.match(app.innerHTML, /Капучино/);
   assert.doesNotMatch(app.innerHTML, /href="\/admin\/sites\/moka-coffee\/access"/);
   assert.deepEqual(requested, ['/api/overview?days=7', '/api/sites', '/api/sites/moka-coffee']);

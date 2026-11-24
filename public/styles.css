@@ -214,6 +214,7 @@ td strong { font-weight: 600; }
 .tabs a:focus-visible { outline-offset: -3px; }
 .feedback-badge { color: var(--brand-deep); font: .75rem/16px var(--mono); }
 .feedback-inbox { display: grid; gap: 12px; }
+.feedback-settings { margin-bottom: 16px; }
 .feedback-inbox > .page-heading { margin-bottom: 0; }
 .feedback-filters { padding: 16px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); align-items: end; }
 .feedback-card { display: grid; gap: 8px; padding: clamp(16px, 3.5vw, 24px); }
@@ -562,7 +563,10 @@ body:has(#modal[open], .theme-catalogue[open]) { overflow: hidden; }
 .landing-menu .public-description { margin-top: 4px; font-size: .875rem; }
 
 .public-content { padding: 24px 32px; }
-.public-actions { display: grid; gap: 8px; }
+.public-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.public-actions > :not(.public-social) { flex: 0 0 100%; min-width: 0; }
+.public-social { display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--venue-control); color: var(--venue-accent); }
+.public-social:hover { background: var(--venue-bg); }
 .menu-contact-actions { margin-top: 24px; }
 .public-button {
   display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 8px 12px;
@@ -580,6 +584,14 @@ button.public-button { width: 100%; text-align: left; }
 .guest-info dt { display: flex; align-items: center; gap: 8px; font-size: .875rem; font-weight: 600; }
 .guest-info dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .guest-info code { font: inherit; font-weight: 600; }
+.guest-wifi > summary { list-style: none; }
+.guest-wifi > summary::-webkit-details-marker { display: none; }
+.guest-wifi[open] > summary > svg { transform: rotate(180deg); }
+.guest-wifi-info { display: grid; gap: 8px; margin-top: 8px; padding: 12px; border-radius: var(--venue-control); background: var(--venue-bg); }
+.guest-wifi:not([open]) .guest-wifi-info { display: none; }
+.guest-wifi-info .guest-info { padding: 0; }
+.guest-wifi-info dd { user-select: all; }
+.guest-wifi-info > p { color: var(--venue-muted); font-size: .875rem; }
 .public-footer { display: flex; align-items: center; justify-content: center; gap: 4px; padding: 12px 8px; border-top: 1px solid var(--venue-line); color: var(--venue-muted); font-size: .8125rem; }
 .public-menu-heading { display: flex; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
 .public-menu-heading h2 { font-family: var(--venue-heading); font-size: 2rem; font-weight: 500; line-height: 1.12; }

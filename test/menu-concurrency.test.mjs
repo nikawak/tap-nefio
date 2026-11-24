@@ -225,6 +225,19 @@ test('guest blocks can be reordered by assigned administrators, and the rating r
   assert.equal(hidden.model.site.google_review_url, undefined);
   assert.equal((await request('/moka-coffee/go/yandex')).status, 404);
   assert.equal((await menu('manager')).site.google_review_url, google);
+  assert.match(hidden.markup, /class="public-social"[^>]*aria-label="Telegram"[^>]*><svg/);
+
+  const saveGuest = (body, version) => request(path, { method: 'PUT', role: 'manager', version, body });
+  assert.equal((await saveGuest({ maps_url: yandex }, 5)).status, 200);
+  assert.equal((await request('/moka-coffee/go/maps')).headers.get('location'), yandex);
+  assert.equal((await saveGuest({ show_reviews: true }, 6)).status, 200);
+  const separate = await page();
+  assert.deepEqual(separate.model.reviewProviders, ['yandex', 'google']);
+  assert.deepEqual(separate.model.site.guest_order, guest_order);
+  assert.equal(separate.model.site.maps_url, yandex);
+  assert.equal((await saveGuest({ maps_url: '' }, 7)).status, 200);
+  assert.equal((await request('/moka-coffee/go/maps')).status, 404);
+  assert.deepEqual((await page()).model.reviewProviders, ['yandex', 'google']);
 });
 
 test('the production demo migration fills coffe1 without overwriting existing content or other venues', async (t) => {
@@ -314,25 +327,36 @@ test('site setup saves guest link visibility together and preserves disabled add
   assert.equal((await request('/moka-coffee/go/maps')).status, 303);
   assert.equal((await publicPage()).website_url, undefined);
   assert.equal((await menu()).site.website_url, settings.website_url);
-  const created = await request('/api/sites', { method: 'POST', body: { ...settings, slug: 'test-guest-links' } });
+  const { maps_url, ...linksWithoutMaps } = settings.link_visibility;
+  assert.equal((await save({ ...settings, link_visibility: linksWithoutMaps })).status, 200);
+  assert.equal((await publicPage()).maps_url, original.maps_url);
+  const created = await request('/api/sites', { method: 'POST', body: { ...settings, slug: 'test-guest-links', link_visibility: linksWithoutMaps } });
   assert.equal(created.status, 201);
-  assert.equal((await created.json()).site.website_url, settings.website_url);
+  const { site: createdSite } = await created.json();
+  assert.equal(createdSite.website_url, settings.website_url);
+  assert.equal(createdSite.maps_url, '');
 });
 
 test('a single site form shows optional guest fields only when selected', () => {
   const code = read('public/app.js').replace(/\bstart\(\);\s*$/, '');
   const elements = { '#app': {}, '#modal': { addEventListener() {} }, '#page-data': { textContent: '{}' } };
-  const { siteForm, updateSiteOptionFields } = runInNewContext(code + '\n({siteForm, updateSiteOptionFields});', {
+  const { siteForm, guestLayoutForm, reviewSettings, updateSiteOptionFields } = runInNewContext(code + '\n({siteForm, guestLayoutForm, reviewSettings, updateSiteOptionFields});', {
     document: { querySelector: (selector) => elements[selector] },
   });
   for (const markup of [siteForm(), siteForm({ slug: 'venue', telegram_url: 'https://t.me/example' })]) {
     assert.equal((markup.match(/type="submit"/g) ?? []).length, 1);
-    assert.equal((markup.match(/data-site-toggle/g) ?? []).length, 7);
+    assert.equal((markup.match(/data-site-toggle/g) ?? []).length, 6);
+    assert.doesNotMatch(markup, /name="(?:enable_)?maps_url"/);
     assert.match(markup, /name="enable_website_url" data-site-toggle/);
     assert.match(markup, /data-site-fields hidden/);
     assert.match(markup, /name="show_hours" data-site-toggle\s*>/);
     assert.match(markup, /name="show_wifi" data-site-toggle\s*>/);
   }
+  const site = { guest_order: ['maps'], guest_version: 1, show_maps: 1, maps_url: 'https://maps.example.test/' };
+  assert.match(guestLayoutForm(site), /name="maps_url"[^>]*value="https:\/\/maps\.example\.test\/"/);
+  assert.doesNotMatch(guestLayoutForm(site), /checkbox|review_url/);
+  assert.match(reviewSettings(site), /name="yandex_review_url"/);
+  assert.match(reviewSettings(site), /name="google_review_url"/);
   const input = { value: 'https://example.test/', hasAttribute: () => true };
   const wrapper = { querySelectorAll: () => [input] };
   const toggle = { checked: true, closest: () => ({ querySelector: () => wrapper }) };
