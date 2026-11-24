@@ -665,7 +665,7 @@ function feedbackContent(inbox, sites) {
     `<option value="${value}" ${selected === value ? 'selected' : ''}>${label}</option>`).join('');
   const format = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Minsk' });
   return `<section class="feedback-inbox">
-    <div class="section-heading detail-heading"><div><h2>Отзывы гостей</h2><p>Приватные отзывы с оценками от 1 до 3.</p></div>
+    <div class="${sites ? 'page-heading' : 'section-heading detail-heading'}"><div>${sites ? '<h1>Отзывы</h1>' : '<h2>Отзывы гостей</h2>'}<p>Приватные отзывы с оценками от 1 до 3.</p></div>
       ${button('Обновить', '', 'retry-load', 'secondary')}</div>
     <form id="feedbackFilters" class="panel feedback-filters form-stack">
       ${sites ? `<label>Мини-сайт<select name="site">${options([['', 'Все мини-сайты'], ...sites.map(({ slug, name }) => [slug, html(name)])], site)}</select></label>` : ''}
@@ -1260,7 +1260,7 @@ function render() {
     content = reportUnavailable(true);
   } else if (data) {
     content = current.name === 'overview' ? overviewContent(data) : current.name === 'analytics' ? analyticsContent(data) :
-      current.name === 'feedback' ? `<div class="page-heading"><h1>Отзывы</h1></div>${feedbackContent(data.inbox, data.sites)}` : sitesContent(data);
+      current.name === 'feedback' ? feedbackContent(data.inbox, data.sites) : sitesContent(data);
   }
   clearPhotoPreviews(app);
   cancelMenuDrag();

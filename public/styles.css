@@ -214,6 +214,7 @@ td strong { font-weight: 600; }
 .tabs a:focus-visible { outline-offset: -3px; }
 .feedback-badge { color: var(--brand-deep); font: .75rem/16px var(--mono); }
 .feedback-inbox { display: grid; gap: 12px; }
+.feedback-inbox > .page-heading { margin-bottom: 0; }
 .feedback-filters { padding: 16px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); align-items: end; }
 .feedback-card { display: grid; gap: 8px; padding: clamp(16px, 3.5vw, 24px); }
 .feedback-card header { display: flex; align-items: center; justify-content: space-between; }
