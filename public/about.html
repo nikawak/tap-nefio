@@ -3,58 +3,58 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f8f8fc">
+  <meta name="theme-color" content="#f7f4ee">
   <meta name="description" content="Тап. — мини-сайт заведения с NFC-меткой, меню, соцсетями, картами и обратной связью от гостей.">
   <title>О проекте «Тап.» — мини-сайт заведения и NFC-метки</title>
   <link rel="stylesheet" href="/assets/styles.css">
 </head>
-<body>
+<body class="about-body">
   <div class="about-page">
     <header class="about-header">
       <a class="brand" href="/about" aria-label="Тап. О проекте" aria-current="page">
         <span class="brand-icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 11a13 13 0 0 1 16 0M7 14a8 8 0 0 1 10 0m-7 3a3.3 3.3 0 0 1 4 0"/><circle cx="12" cy="20" r="1" fill="currentColor" stroke="none"/></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 11a13 13 0 0 1 16 0M7 14a8 8 0 0 1 10 0m-7 3a3.3 3.3 0 0 1 4 0"/><circle cx="12" cy="20" r="1" fill="currentColor" stroke="none"/></svg>
         </span>
         <span>тап<span class="brand-dot">.</span></span>
       </a>
-      <a class="button secondary" href="/admin">Панель управления</a>
+      <a class="about-nav-link" href="/admin">Панель управления</a>
     </header>
 
     <main class="about-main">
       <section class="about-hero" aria-labelledby="about-title">
         <div class="about-intro">
-          <h1 id="about-title">Ваше заведение<br>в одно касание</h1>
-          <p>Я сделал «Тап.», чтобы гостю было проще открыть меню и найти ваше заведение после визита. Достаточно поднести телефон к NFC-метке и нажать на уведомление. Фирменная страница откроется в браузере без установки приложения и регистрации.</p>
-          <a class="button primary" href="/coffe1">Посмотреть демо</a>
+          <h1 id="about-title">Мини-сайт заведения по NFC-метке</h1>
+          <p>Гость подносит телефон к метке, нажимает на уведомление и открывает меню, соцсети и карты. Страница открывается в браузере без приложения и регистрации.</p>
+          <a class="button primary" href="/coffe1">Открыть демо-страницу</a>
         </div>
         <figure class="about-demo">
-          <img src="/assets/coffe1/cover.jpg" alt="" width="1440" height="960">
-          <figcaption><span>Демо-кофейня «Кофе 01»</span><a href="/coffe1/menu">Открыть меню</a></figcaption>
+          <img class="about-cover" src="/assets/coffe1/cover.jpg" alt="Чашка кофе и круассан на столе у окна" width="1440" height="960" fetchpriority="high">
+          <figcaption><div class="about-venue"><img src="/assets/coffe1/logo.png" alt="" width="40" height="40"><div><strong>Кофе 01</strong><span>Демо-кофейня</span></div></div><a href="/coffe1/menu">Смотреть меню</a></figcaption>
         </figure>
       </section>
 
       <section class="about-section" aria-labelledby="about-features">
-        <h2 id="about-features">Что я собираю на одной странице</h2>
-        <div class="about-features panel">
+        <h2 id="about-features">Что есть на странице заведения</h2>
+        <div class="about-features">
           <div>
             <h3>Меню с ценами и фото</h3>
             <p>Гость может посмотреть блюда и цены за столом. Вы можете обновлять меню в панели, и изменения появятся по той же ссылке.</p>
           </div>
           <div>
             <h3>Соцсети и карты</h3>
-            <p>Я добавляю ваши ссылки на Instagram, Telegram, ВКонтакте и карточку на картах. Гостю проще подписаться, построить маршрут или поделиться заведением с друзьями.</p>
+            <p>На странице можно разместить ссылки на Instagram, Telegram, ВКонтакте и карты. Гость может подписаться, построить маршрут или поделиться ссылкой.</p>
           </div>
           <div>
             <h3>Обратная связь</h3>
             <p>Гости могут оценить визит и рассказать, что пошло не так. Отправленные комментарии видны владельцу и администраторам заведения в панели.</p>
           </div>
         </div>
-        <p class="about-benefit">Я хочу, чтобы после визита гостям было проще снова найти вас. Когда они подписываются, оставляют отзывы на картах или делятся ссылкой, ваш бренд становится заметнее. Так о заведении могут узнать и новые гости.</p>
+        <p class="about-benefit">После визита гости могут снова открыть страницу по той же ссылке, найти заведение на картах или поделиться им с друзьями.</p>
       </section>
 
       <section class="about-section" aria-labelledby="about-questions">
         <h2 id="about-questions">Частые вопросы</h2>
-        <div class="about-faq panel">
+        <div class="about-faq">
           <details open>
             <summary>Что, если гость захочет поставить две звезды?</summary>
             <p>При оценке от одной до трёх звёзд откроется форма приватного комментария. Гость может рассказать, что случилось, и по желанию указать имя и место визита. Если ссылка на карты подключена, она доступна при любой оценке. Публичный отзыв гость оставляет в самом сервисе карт.</p>

@@ -17,16 +17,13 @@ const icons = {
   home: '<rect x="3" y="3" width="7" height="7" rx="1.4"/><rect x="14" y="3" width="7" height="7" rx="1.4"/><rect x="3" y="14" width="7" height="7" rx="1.4"/><rect x="14" y="14" width="7" height="7" rx="1.4"/>',
   globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18Z"/>',
   bars: '<rect x="3.5" y="11" width="3.8" height="8.5" rx="1"/><rect x="10.1" y="7" width="3.8" height="12.5" rx="1"/><rect x="16.7" y="3.5" width="3.8" height="16" rx="1"/>',
-  eye: '<path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/>',
   book: '<path d="M12 6v15M3.5 4.5h5A3.5 3.5 0 0 1 12 8v13a4.5 4.5 0 0 0-3.5-2h-5zm17 0h-5A3.5 3.5 0 0 0 12 8v13a4.5 4.5 0 0 1 3.5-2h5z"/>',
   star: '<path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9Z"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
   grip: '<path stroke-width="3" stroke-linecap="round" d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"/>',
   chevron: '<path d="m7 10 5 5 5-5"/>',
-  right: '<path d="m10 7 5 5-5 5"/>',
   calendar: '<rect x="3.5" y="5.5" width="17" height="15" rx="2"/><path d="M7.5 3.5v4M16.5 3.5v4M3.5 10h17"/>',
-  trend: '<path d="m3 17 6-6 4 4 7-8m-5 0h5v5"/>',
   external: '<path d="M13 4h7v7m0-7-8 8m5 1v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h5"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M9 4.6 10 2h4l1 2.6 2 .9 2.8-.5 2 3.5-1.8 2.2v2.6l1.8 2.2-2 3.5-2.8-.5-2 .9L14 22h-4l-1-2.6-2-.9-2.8.5-2-3.5L4 13.3v-2.6L2.2 8.5l2-3.5 2.8.5z"/>',
@@ -37,7 +34,7 @@ const icons = {
   check: '<path d="m5 12 4 4L19 6"/>',
   coffee: '<path d="M5 9h11v5a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4zm11 1h2a2 2 0 1 1 0 4h-2M3 21h16M8 3v3m4-3v3"/>',
   leaf: '<path d="M20 4c-7 0-13 3-13 9a5 5 0 0 0 5 5c6 0 9-6 8-14ZM4 21c2-5 5-7 9-10"/>',
-  spark: '<path d="M12 2c.9 6 3.9 9 10 10-6.1 1-9.1 4-10 10-.9-6-3.9-9-10-10 6.1-1 9.1-4 10-10Z"/>',
+  palette: '<path d="M12 3a9 9 0 0 0 0 18h1.5a2 2 0 0 0 1.5-3.3 1.6 1.6 0 0 1 1.2-2.7H18a3 3 0 0 0 3-3 9 9 0 0 0-9-9Z"/><path d="M7.5 10h.01M10 6.8h.01M14 6.8h.01M17 10h.01" stroke-width="2.5"/>',
   social: '<circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="m8.2 11 7.6-4m-7.6 6 7.6 4"/>',
   telegram: '<path d="m3 11 17-7-3 16-6-5-3 3v-5zM8 13l7-5"/>',
   instagram: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17" cy="7" r="1" fill="currentColor" stroke="none"/>',
@@ -47,14 +44,14 @@ const icons = {
   shield: '<path d="M12 22s7.5-3.6 7.5-10V5L12 2 4.5 5v7C4.5 18.4 12 22 12 22Z"/><path d="m9 12 2 2 4-4"/>',
   logout: '<path d="M11 5H5v14h6m-1-7h10m-4-4 4 4-4 4"/>',
 };
-const svg = (name, size = 20) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || ''}</svg>`;
+const svg = (name, size = 18) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || ''}</svg>`;
 const html = (value = '') => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 const nf = new Intl.NumberFormat('ru-RU');
 const money = (value, currency) => new Intl.NumberFormat('ru-RU', { style: 'currency', currency }).format(value / 100);
 const dateLabel = (value, options) => new Intl.DateTimeFormat('ru-RU', { ...options, timeZone: 'UTC' }).format(new Date(value + 'T00:00:00Z')).replace('.', '');
 const actionInfo = {
-  menu: ['Открытия меню', 'book', 'iris'], maps: ['Переходы к отзывам', 'star', 'peach'],
-  instagram: ['Instagram', 'instagram', 'pink'], telegram: ['Telegram', 'telegram', 'sky'], vk: ['ВКонтакте', 'social', 'mint'],
+  menu: ['Открытия меню', 'book'], maps: ['Переходы к отзывам', 'star'],
+  instagram: ['Instagram', 'instagram'], telegram: ['Telegram', 'telegram'], vk: ['ВКонтакте', 'social'],
 };
 const tipLinks = {
   alpha: '«нетмонет» · Альфа-Банк',
@@ -63,7 +60,7 @@ const tipLinks = {
   'bepaid-link': 'Платёжная ссылка bePaid',
 };
 const tipLabels = { ...tipLinks, bepaid: 'Оплата картой через bePaid' };
-const tipIcon = '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 20.5 4.6 13C.5 8.6 6.4 2.4 10.8 6.9l1.2 1.2 1.2-1.2C17.6 2.4 23.5 8.6 19.4 13Z" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const tipIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 20.5 4.6 13C.5 8.6 6.4 2.4 10.8 6.9l1.2 1.2 1.2-1.2C17.6 2.4 23.5 8.6 19.4 13Z" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const themes = {
   light: 'Светлая', dark: 'Тёмная', coffee: 'Кофе', slate: 'Сланец', garden: 'Базилик',
   indigo: 'Индиго', lavender: 'Лаванда', peach: 'Персик', sand: 'Песок', walnut: 'Орех',
@@ -124,29 +121,29 @@ const navigation = [
 function structure(current, content) {
   const user = state.user;
   return `<div class="workspace">
-    <aside class="sidebar ${state.mobileNav ? 'opened' : ''}" aria-label="Навигация">
+    <aside id="panelNavigation" class="sidebar ${state.mobileNav ? 'opened' : ''}" aria-label="Навигация">
       <div class="sidebar-brand">${logo()}</div>
-      <div class="nav-group"><p class="nav-label">Рабочее пространство</p>
+      <nav class="nav-group" aria-label="Разделы панели">
         ${navigation.map(([key, label, icon, href]) => {
           const active = current.name === key || (key === 'sites' && current.name === 'detail');
-          return `<a class="nav-link ${active ? 'active' : ''}" href="${href}" data-nav ${active ? 'aria-current="page"' : ''}>${svg(icon, 19)} <span>${label}</span></a>`;
+          return `<a class="nav-link ${active ? 'active' : ''}" href="${href}" data-nav ${active ? 'aria-current="page"' : ''}>${svg(icon)} <span>${label}</span></a>`;
         }).join('')}
-      </div>
+      </nav>
       <div class="sidebar-bottom">
-        <a class="nav-link" href="/about">${svg('globe', 19)} <span>О проекте</span></a>
-        ${user.demo ? `<div class="demo-note"><span class="demo-dot"></span><div><strong>Демо-режим</strong><small>Пример рабочего пространства</small></div></div>` : ''}
+        <a class="nav-link" href="/about">${svg('globe')} <span>О проекте</span></a>
+        ${user.demo ? '<p class="demo-note">Демо-режим</p>' : ''}
       </div>
     </aside>
     ${state.mobileNav ? '<button class="nav-backdrop" data-action="mobile-nav" aria-label="Закрыть навигацию"></button>' : ''}
     <div class="main-frame">
       <header class="topbar">
-        <div class="crumbs"><button class="icon-button mobile-toggle" type="button" data-action="mobile-nav" aria-label="Открыть навигацию">${svg('menu')}</button>
+        <div class="crumbs"><button class="icon-button mobile-toggle" type="button" data-action="mobile-nav" aria-label="Навигация" aria-controls="panelNavigation" aria-expanded="${state.mobileNav}">${svg('menu')}</button>
           <span class="crumb-root">Рабочее пространство</span><span class="crumb-separator">/</span>
           ${current.name === 'detail' ? `<a data-nav href="/admin/sites">Мини-сайты</a><span class="crumb-separator">/</span>` : ''}
           <strong>${html(current.title)}</strong>
         </div>
         <div class="account-wrap">
-          <button class="account" data-action="account" aria-expanded="${state.showAccount}"><span class="avatar">${html(user.name.slice(0, 1).toUpperCase())}</span>
+          <button class="account" data-action="account" aria-label="Профиль: ${html(user.name)}" aria-expanded="${state.showAccount}"><span class="avatar" aria-hidden="true">${html(user.name.slice(0, 1).toUpperCase())}</span>
             <span class="account-name"><strong>${html(user.name)}</strong><small>${user.role === 'owner' ? 'Владелец' : 'Администратор'}</small></span>${svg('chevron', 15)}
           </button>
           ${state.showAccount ? `<div class="account-menu">
@@ -172,20 +169,12 @@ function button(label, icon, action, style = 'primary') {
 }
 
 const linkButton = (label, icon, href, attrs = '') => `<a class="button secondary" href="${html(href)}" ${attrs}>${svg(icon, 17)}${label}</a>`;
-const createButton = () => state.user.role === 'owner' ? button('Создать сайт', 'plus', 'new-site') : '';
+const createButton = () => state.user.role === 'owner' ? button('Создать мини-сайт', 'plus', 'new-site') : '';
 
-function welcome() {
-  return `<section class="welcome">
-    <div class="welcome-copy"><div class="welcome-tag">${svg('nfc', 16)} NFC-СТРАНИЦЫ</div>
-      <h2>Одно касание.<br class="welcome-mobile-break"> Больше возможностей.</h2>
-      <p>Дайте гостям быстрый доступ к меню, отзывам<br class="wide-break"> и соцсетям вашего заведения.</p>
-    </div>
-    <div class="welcome-art" aria-hidden="true">
-      <span class="orbit orbit-one"></span><span class="orbit orbit-two"></span><span class="orbit orbit-three"></span>
-      <span class="art-spark art-spark-one">✦</span><span class="art-spark art-spark-two">✦</span><span class="art-spark art-spark-three">✧</span>
-      <div class="art-tile art-tile-rear"><span></span><span></span></div>
-      <div class="art-tile art-tile-front">${svg('nfc', 63)}<i></i></div>
-    </div>
+function nfcIntroduction() {
+  return `<section class="nfc-intro">
+    <span class="nfc-mark">${svg('nfc', 24)}</span>
+    <div><h2>Страницы заведений с NFC</h2><p>Гости открывают меню, отзывы и соцсети, поднося телефон к метке</p></div>
   </section>`;
 }
 
@@ -193,19 +182,19 @@ function change(current, previous) {
   if (!previous) return current ? '<span class="metric-new">Новые данные</span>' : '<span class="metric-new">Нет изменений</span>';
   const percent = Math.round((current - previous) / previous * 1000) / 10;
   const label = (percent > 0 ? '+' : '') + nf.format(percent) + '%';
-  return `<span class="metric-change ${percent < 0 ? 'down' : ''}">${svg('trend', 13)} ${label}</span><span>к прошлому периоду</span>`;
+  return `<span class="metric-change ${percent < 0 ? 'down' : ''}">${label}</span><span>к прошлому периоду</span>`;
 }
 
 function metrics(data) {
   const { current, comparison } = data;
   return `<section class="metrics" aria-label="Ключевые показатели">
   ${[
-    ['Всего посещений', 'eye', 'iris', current.nfc + current.direct, comparison.nfc + comparison.direct],
-    ['Переходы с NFC', 'nfc', 'sky', current.nfc, comparison.nfc],
-    ['Открытия меню', 'book', 'mint', current.menu, comparison.menu],
-    ['Переходы к отзывам', 'star', 'peach', current.maps, comparison.maps],
-  ].map(([label, icon, tone, value, prev]) =>
-    `<article class="panel metric"><div class="metric-head"><span class="icon-tile ${tone}">${svg(icon, 20)}</span><span>${label}</span></div>
+    ['Всего посещений', current.nfc + current.direct, comparison.nfc + comparison.direct],
+    ['Переходы с NFC', current.nfc, comparison.nfc],
+    ['Открытия меню', current.menu, comparison.menu],
+    ['Переходы к отзывам', current.maps, comparison.maps],
+  ].map(([label, value, prev]) =>
+    `<article class="panel metric"><div class="metric-head">${label}</div>
       <strong class="metric-number">${nf.format(value)}</strong><div class="metric-foot">${change(value, prev)}</div></article>`).join('')}
   </section>`;
 }
@@ -221,48 +210,52 @@ function pointPath(points) {
 
 function chart(data) {
   const width = 640;
-  const height = 172;
-  const left = 40;
-  const right = 620;
-  const bottom = 154;
-  const top = 15;
+  const height = 192;
+  const ticks = [4, 3, 2, 1, 0];
   const maximum = Math.max(10, ...data.series.flatMap(({ nfc, direct }) => [nfc, direct]));
   const raw = maximum / 4;
   const magnitude = 10 ** Math.floor(Math.log10(raw));
   const step = [1, 2, 2.5, 5, 10].find((value) => value * magnitude >= raw) * magnitude;
   const limit = step * 4;
-  const y = (value) => bottom - (bottom - top) * value / limit;
-  const points = (key) => data.series.map((item, index) => [left + (right - left) * index / (data.series.length - 1), y(item[key])]);
+  const fraction = (index) => index / Math.max(1, data.series.length - 1);
+  const y = (value) => height - height * value / limit;
+  const points = (key) => data.series.map((item, index) => [width * fraction(index), y(item[key])]);
   const nfc = pointPath(points('nfc'));
   const direct = pointPath(points('direct'));
+  const dateTicks = data.series.length <= 7 ? data.series.map((_, index) => index) :
+    Array.from({ length: 7 }, (_, index) => Math.round(index * (data.series.length - 1) / 6));
   return `<article class="panel chart-panel"><div class="chart-heading">
-    <div><h2>Динамика посещений</h2><p>Переходы по дням</p></div>
+    <h2>Посещения по дням</h2>
     <div class="legend" aria-label="Источники"><span><i></i>С NFC</span><span><i></i>Другие</span></div>
     </div>
-    <div class="chart-canvas"><svg width="100%" viewBox="0 0 ${width} ${height}" role="img" aria-label="График NFC и других посещений по дням">
-      <defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox"><stop offset="0%" stop-color="#8156ff" stop-opacity=".18"/><stop offset="100%" stop-color="#8156ff" stop-opacity=".015"/></linearGradient></defs>
-      ${[4, 3, 2, 1, 0].map((tick) => `<g><line x1="${left}" y1="${y(step * tick)}" x2="${right}" y2="${y(step * tick)}" stroke="#ececf2" stroke-dasharray="4 5"/><text x="0" y="${y(step * tick) + 4}" class="axis">${nf.format(step * tick)}</text></g>`).join('')}
-      <path d="${nfc} L ${right} ${bottom} L ${left} ${bottom} Z" fill="url(#area)"/>
-      <path d="${direct}" fill="none" stroke="#b6a9ed" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="5 6" vector-effect="non-scaling-stroke"/>
-      <path d="${nfc}" fill="none" stroke="#7954e9" stroke-width="2.7" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
-      ${points('nfc').map(([x, py], index) => {
-        const point = data.series[index];
-        const label = `${dateLabel(point.day, { day: 'numeric', month: 'long' })}: NFC — ${point.nfc}, другие — ${point.direct}`;
-        const active = data.series.length <= 7 && point.nfc > 0;
-        return `<g><circle cx="${x}" cy="${py}" r="${active ? 4 : 0}" fill="#fff" stroke="#7954e9" stroke-width="2" vector-effect="non-scaling-stroke"/><rect class="chart-hit" x="${x - 8}" y="0" width="16" height="${bottom}" fill="transparent" aria-label="${html(label)}"><title>${html(label)}</title></rect></g>`;
-      }).join('')}
-    </svg><div class="x-labels">${data.series.filter((_, index, array) => index === array.length - 1 || (index % Math.ceil(array.length / 7) === 0 && index < array.length - 2) || array.length === 7).map(({ day }) =>
-      `<span>${html(dateLabel(day, { day: 'numeric', month: 'short' }))}</span>`).join('')}</div></div>
+    <div class="chart-canvas">
+      <div class="y-labels" aria-hidden="true">${ticks.map((tick) => `<span>${nf.format(step * tick)}</span>`).join('')}</div>
+      <div class="chart-plot"><svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="График NFC и других посещений по дням">
+        ${ticks.map((tick) => `<line class="chart-gridline" x1="0" y1="${y(step * tick)}" x2="${width}" y2="${y(step * tick)}" vector-effect="non-scaling-stroke"/>`).join('')}
+        <path class="chart-area" d="${nfc} L ${width} ${height} L 0 ${height} Z"/>
+        <path class="chart-series chart-direct" d="${direct}" vector-effect="non-scaling-stroke"/>
+        <path class="chart-series chart-nfc" d="${nfc}" vector-effect="non-scaling-stroke"/>
+        ${data.series.map((point, index) => {
+          const label = `${dateLabel(point.day, { day: 'numeric', month: 'long' })}: NFC — ${nf.format(point.nfc)}, другие — ${nf.format(point.direct)}`;
+          const hitWidth = width / Math.max(1, data.series.length - 1);
+          const x = width * fraction(index);
+          const start = Math.max(0, x - hitWidth / 2);
+          const end = Math.min(width, x + hitWidth / 2);
+          return `<rect class="chart-hit" x="${start}" y="0" width="${end - start}" height="${height}" aria-label="${html(label)}"><title>${html(label)}</title></rect>`;
+        }).join('')}
+      </svg><div class="x-labels">${dateTicks.map((index, position) =>
+        `<span style="--day:${fraction(index) * 100}%" class="${position === Math.floor(dateTicks.length / 2) ? 'major-date' : ''}">${html(dateLabel(data.series[index].day, { day: 'numeric', month: 'short' }))}</span>`).join('')}</div></div>
+    </div>
     </article>`;
 }
 
 function actions(data, full = false) {
   const relevant = full ? Object.entries(actionInfo) : Object.entries(actionInfo).filter(([key]) => key === 'menu' || key === 'maps' || data.current[key] > 0).slice(0, 4);
   const maximum = Math.max(1, ...relevant.map(([key]) => data.current[key]));
-  return `<article class="panel actions-panel"><h2>Действия гостей</h2><p>Клики по элементам страницы</p><div class="action-stats">
-    ${relevant.map(([key, [label, icon, tone]]) => `<div class="action-stat"><span class="icon-tile ${tone}">${svg(icon, 17)}</span>
+  return `<article class="panel actions-panel"><h2>Действия гостей</h2><div class="action-stats">
+    ${relevant.map(([key, [label, icon]]) => `<div class="action-stat">${svg(icon)}
     <div class="action-stat-body"><div><span>${label}</span><strong>${nf.format(data.current[key])}</strong></div>
-    <div class="progress ${tone}"><i style="width:${data.current[key] / maximum * 100}%"></i></div></div></div>`).join('')}
+    <div class="progress"><i style="width:${data.current[key] / maximum * 100}%"></i></div></div></div>`).join('')}
   </div></article>`;
 }
 
@@ -270,19 +263,19 @@ function tipsAnalytics({ counts, paid }) {
   const countFor = (method, source) => counts.find((row) => row.method === method && row.source === source)?.count || 0;
   return `<section class="site-section"><div class="section-heading"><div><h2>Чаевые</h2>
     <p>Переходы по способам и оплаты, подтверждённые bePaid</p></div></div>
-    <div class="tip-metrics"><article class="panel metric"><div class="metric-head"><span class="icon-tile peach">${tipIcon}</span>Подтверждённые оплаты</div>
+    <div class="tip-metrics"><article class="panel metric"><div class="metric-head">Подтверждённые оплаты</div>
     <strong class="metric-number">${nf.format(paid.count)}</strong></article>
-    <article class="panel metric"><div class="metric-head"><span class="icon-tile mint">${tipIcon}</span>Сумма подтверждённых чаевых</div>
+    <article class="panel metric"><div class="metric-head">Сумма подтверждённых чаевых</div>
     <strong class="metric-number">${money(paid.amount, 'BYN')}</strong></article></div>
-    <div class="panel table-wrap"><table><thead><tr><th>Способ</th><th>С NFC</th><th>Другие переходы</th></tr></thead>
-    <tbody>${Object.entries(tipLabels).map(([method, label]) => `<tr><td>${html(label)}</td><td>${nf.format(countFor(method, 'nfc'))}</td><td>${nf.format(countFor(method, 'direct'))}</td></tr>`).join('')}</tbody></table></div>
+    <div class="panel table-wrap"><table><thead><tr><th>Способ</th><th class="numeric">С NFC</th><th class="numeric">Другие переходы</th></tr></thead>
+    <tbody>${Object.entries(tipLabels).map(([method, label]) => `<tr><td>${html(label)}</td><td class="numeric">${nf.format(countFor(method, 'nfc'))}</td><td class="numeric">${nf.format(countFor(method, 'direct'))}</td></tr>`).join('')}</tbody></table></div>
   </section>`;
 }
 
 function siteIcon(site, large = false) {
-  const icon = { coffee: 'coffee', garden: 'leaf', lavender: 'spark', indigo: 'globe' }[site.theme] || 'globe';
+  const icon = { coffee: 'coffee', garden: 'leaf' }[site.theme] || 'globe';
   const logoPhoto = site.logo_photo_url || site.logo_url;
-  return logoPhoto ? `<img class="site-icon ${site.theme} ${large ? 'large' : ''}" src="${html(logoPhoto)}" alt="">` : `<span class="site-icon ${site.theme} ${large ? 'large' : ''}">${svg(icon, large ? 40 : 23)}</span>`;
+  return logoPhoto ? `<img class="site-icon" src="${html(logoPhoto)}" alt="">` : `<span class="site-icon">${svg(icon, large ? 28 : 18)}</span>`;
 }
 
 function statusBadge(status) {
@@ -290,17 +283,17 @@ function statusBadge(status) {
 }
 
 function siteCards(sites) {
-  return sites.length ? `<div class="site-grid">${sites.map((site) => `<article class="panel site-card">
-    <a class="site-card-main" href="/admin/sites/${site.slug}" data-nav>${siteIcon(site)}<span class="site-card-name"><strong>${html(site.name)}</strong><small>${html(site.type)}</small></span></a>
+  return sites.length ? `<div class="site-grid">${sites.map((site) => `<a class="panel site-card" href="/admin/sites/${site.slug}" data-nav>
+    <span class="site-card-main">${siteIcon(site)}<span class="site-card-name"><strong>${html(site.name)}</strong><small>${html(site.type)}</small></span></span>
     ${statusBadge(site.status)}
-    <div class="site-card-bottom"><span>/${site.slug}</span><a href="/admin/sites/${site.slug}" data-nav aria-label="Управлять сайтом ${html(site.name)}">${svg('right', 17)}</a></div>
-  </article>`).join('')}</div>` : `<div class="panel empty"><span class="icon-tile iris">${svg('globe')}</span><h3>Пока нет мини-сайтов</h3><p>${state.user.role === 'owner' ? 'Создайте первую страницу для заведения.' : 'Владелец может назначить вам доступ к странице.'}</p>${createButton()}</div>`;
+    <span class="site-card-bottom">/${site.slug}</span>
+  </a>`).join('')}</div>` : `<div class="panel empty"><h3>Пока нет мини-сайтов</h3><p>${state.user.role === 'owner' ? 'Создайте первую страницу для заведения.' : 'Владелец может назначить вам доступ к странице.'}</p>${createButton()}</div>`;
 }
 
 function overviewContent(data) {
   return `<div class="page-heading"><div><h1>Обзор</h1><p>Статистика и управление вашими мини-сайтами.</p></div>
     <div class="heading-actions">${periodControl()}${createButton()}</div></div>
-    ${welcome()}${metrics(data)}
+    ${nfcIntroduction()}${metrics(data)}
     <div class="chart-layout">${chart(data)}${actions(data)}</div>
     <section class="site-section"><div class="section-heading"><div><h2>Мини-сайты</h2><p>Страницы ваших заведений</p></div>
       <a class="text-link" data-nav href="/admin/sites">Все сайты</a></div>
@@ -314,9 +307,9 @@ function analyticsContent(data) {
     `<option value="${site.slug}" ${site.slug === state.siteFilter ? 'selected' : ''}>${html(site.name)}</option>`).join('')}</select>${svg('chevron', 15)}</label>
   ${periodControl()}</div></div>${metrics(data)}<div class="chart-layout">${chart(data)}${actions(data, true)}</div>
   <section class="site-section"><div class="section-heading"><div><h2>По мини-сайтам</h2><p>Посещения и переходы с меток</p></div></div>
-  ${data.sites.length ? `<div class="panel table-wrap"><table><thead><tr><th>Мини-сайт</th><th>Статус</th><th>Все посещения</th><th>С NFC</th></tr></thead><tbody>
+  ${data.sites.length ? `<div class="panel table-wrap"><table><thead><tr><th>Мини-сайт</th><th>Статус</th><th class="numeric">Все посещения</th><th class="numeric">С NFC</th></tr></thead><tbody>
   ${data.sites.map((site) => `<tr><td><a class="table-site" data-nav href="/admin/sites/${site.slug}">${siteIcon(site)}<strong>${html(site.name)}</strong></a></td>
-  <td>${statusBadge(site.status)}</td><td>${nf.format(site.visits)}</td><td>${nf.format(site.nfc)}</td></tr>`).join('')}
+  <td>${statusBadge(site.status)}</td><td class="numeric">${nf.format(site.visits)}</td><td class="numeric">${nf.format(site.nfc)}</td></tr>`).join('')}
   </tbody></table></div>` : siteCards([])}</section>${tipsAnalytics(data.tips)}`;
 }
 
@@ -364,9 +357,9 @@ function openThemeCatalogue(opener) {
       <div class="modal-header"><h2 id="themeCatalogueTitle">${preview ? 'Предпросмотр · ' + themes[preview] : 'Все темы'}</h2>
         <button type="button" class="icon-button" data-theme-close aria-label="Закрыть">${svg('close')}</button></div>
       ${preview ? `<div class="theme-preview landing-body landing-${preview}">
-        <div class="public-hero"><div class="public-pattern" aria-hidden="true"></div><div class="public-hero-inner">
-          <span class="site-icon">${svg('globe', 20)}</span>${type ? `<p class="public-type">${html(type)}</p>` : ''}
-          <h3>${html(venue)}</h3>
+        <div class="public-hero"><div class="public-hero-inner">
+          <span class="site-icon">${svg('globe')}</span><div class="public-identity">${type ? `<p class="public-type">${html(type)}</p>` : ''}
+          <h3>${html(venue)}</h3></div>
         </div></div>
         <div class="theme-preview-actions" aria-hidden="true"><span class="public-button main-action">Открыть меню</span>
           <span class="public-button">Оценить заведение</span></div>
@@ -486,7 +479,7 @@ function itemsContent(site, items) {
     ${button('Импорт из файла', '', 'menu-import', 'secondary')}${button('Добавить позицию', 'plus', 'new-item')}</div></div>
     ${!site.show_menu ? '<p class="muted">Кнопка меню скрыта на главной странице.</p>' :
       site.menu_url ? '<p class="muted">Кнопка меню открывает внешнюю ссылку.</p>' : ''}
-    ${items.length ? `<div class="panel table-wrap"><table id="menuItemList"><thead><tr><th><span class="sr-only">Порядок</span></th><th>Название</th><th>Категория</th><th>Цена</th><th>Наличие</th><th><span class="sr-only">Действия</span></th></tr></thead>
+    ${items.length ? `<div class="panel table-wrap"><table id="menuItemList"><thead><tr><th><span class="sr-only">Порядок</span></th><th>Название</th><th>Категория</th><th class="numeric">Цена</th><th>Наличие</th><th><span class="sr-only">Действия</span></th></tr></thead>
       <tbody>${items.map((item, index) => `<tr data-menu-row="${html(item.id)}"><td class="item-order-cell">
       ${items.length > 1 ? `<span class="item-order-handle" data-item-drag title="Перетащить" aria-hidden="true">${svg('grip', 20)}</span>
       <div class="item-order-buttons">
@@ -495,7 +488,7 @@ function itemsContent(site, items) {
       </div>` : ''}</td>
       <td><div class="table-item">${item.photo_url ? `<img src="${html(item.photo_url)}" alt="" width="42" height="42" loading="lazy" decoding="async">` : ''}
       <div><strong>${html(item.name)}</strong>${item.description ? `<small class="table-note">${html(item.description)}</small>` : ''}</div></div></td>
-      <td>${html(item.category)}</td><td>${money(item.price, site.currency)}</td><td><span class="status ${item.available ? 'live' : 'draft'}"><i></i>${item.available ? 'В меню' : 'Скрыта'}</span></td>
+      <td>${html(item.category)}</td><td class="numeric">${money(item.price, site.currency)}</td><td><span class="status ${item.available ? 'live' : 'draft'}"><i></i>${item.available ? 'В меню' : 'Скрыта'}</span></td>
       <td><div class="row-actions"><button class="icon-button" data-action="edit-item" data-id="${item.id}" aria-label="Редактировать ${html(item.name)}">${svg('pencil', 18)}</button>
       <button class="icon-button danger" data-action="delete-item" data-id="${item.id}" aria-label="Удалить ${html(item.name)}">${svg('trash', 18)}</button></div></td></tr>`).join('')}</tbody></table></div>` :
       '<div class="panel empty"><h3>Меню пока пустое</h3><p>Добавьте позицию, чтобы она появилась на странице заведения.</p></div>'}`;
@@ -629,7 +622,7 @@ function feedbackContent(site, inbox) {
       <button class="button secondary" type="submit">Применить</button>
     </form>
     ${inbox.reviews.length ? inbox.reviews.map((review) => `<article class="panel feedback-card">
-      <header><strong class="feedback-score" aria-label="Оценка ${review.rating} из 5">${'★'.repeat(review.rating)}<span>${'★'.repeat(5 - review.rating)}</span></strong>
+      <header><strong class="feedback-score" aria-label="Оценка ${review.rating} из 5">${svg('star')}${review.rating} / 5</strong>
         ${review.read_at ? '' : '<span class="status">Новый</span>'}</header>
       <p class="feedback-comment">${html(review.comment)}</p>
       <div class="feedback-meta"><span>${html(review.guest_name || 'Анонимно')}</span><span>${html(format.format(new Date(review.created_at)))} · Минск</span>
@@ -649,14 +642,14 @@ function detailContent(current, bundle, analytics) {
   const owner = state.user.role === 'owner';
   const tabs = [['menu', 'Меню', 'book', base], ['feedback', 'Отзывы', 'star', base + '/feedback'], ['analytics', 'Статистика', 'bars', base + '/analytics'],
     ...(owner ? [['settings', 'Настройки', 'settings', base + '/settings'], ['access', 'Доступ', 'users', base + '/access'], ['tips', 'Чаевые', 'star', base + '/tips']]
-      : [['theme', 'Оформление', 'spark', base + '/theme']])];
+      : [['theme', 'Оформление', 'palette', base + '/theme']])];
   const active = tabs.some(([key]) => key === current.tab) ? current.tab : 'menu';
   const previewPath = '/' + site.slug + '?preview=1';
   return `<div class="page-heading detail-title"><div class="detail-title-main">${siteIcon(site)}<div><h1>${html(site.name)}</h1><p>${html(site.type)} · /${site.slug}</p></div></div>
     <div class="heading-actions">${statusBadge(site.status)}${linkButton('Предпросмотр', 'external', previewPath, 'target="_blank" rel="noopener"')}</div></div>
-    <div class="panel nfc-banner"><span class="icon-tile iris">${svg('nfc', 23)}</span><div><strong>Ссылка для NFC-метки</strong><small>${html(nfcUrl(site))}</small>
+    <div class="panel nfc-banner"><span class="nfc-mark">${svg('nfc', 24)}</span><div><strong>Ссылка для NFC-метки</strong><small>${html(nfcUrl(site))}</small>
     ${site.status === 'draft' ? `<small class="nfc-draft-hint">Гости смогут открыть ссылку после публикации. ${owner ? `<a href="${base}/settings" data-nav>Настройки публикации</a>` : ''}</small>` : ''}</div>
-    ${button('Скопировать', 'copy-nfc', 'secondary')}</div>
+    ${button('Скопировать', 'copy', 'copy-nfc', 'secondary')}</div>
     <nav class="tabs" aria-label="Разделы сайта">${tabs.map(([key, label, icon, href]) => `<a data-nav href="${href}" class="${active === key ? 'selected' : ''}" ${active === key ? 'aria-current="page"' : ''}>${svg(icon, 18)}${label}${key === 'feedback' && unreadFeedback ? `<span class="feedback-badge" aria-label="Непрочитанных отзывов: ${nf.format(unreadFeedback)}">${nf.format(unreadFeedback)}</span>` : ''}</a>`).join('')}</nav>
     ${active === 'menu' ? itemsContent(site, items) : ''}
     ${active === 'feedback' && inbox ? feedbackContent(site, inbox) : ''}
@@ -676,12 +669,12 @@ function landing(model) {
   const site = model.site;
   const base = '/' + site.slug;
   const isMenu = model.view === 'menu';
-  const cover = site.cover_photo_url || site.cover_url;
+  const cover = !isMenu && (site.cover_photo_url || site.cover_url);
   const social = [['telegram', 'Telegram'], ['instagram', 'Instagram'], ['vk', 'ВКонтакте']].filter(([key]) => site[key + '_url']);
   const label = site.type === 'Студия красоты' ? 'Смотреть услуги' : 'Открыть меню';
-  const contactButtons = `<button type="button" class="public-button" data-open-feedback aria-haspopup="dialog"><span>${svg('star', 22)}Оценить заведение</span>${svg('right', 20)}</button>
-    ${site.show_maps && site.maps_url ? `<a class="public-button" href="${base + '/go/maps' + html(model.query)}"><span>${svg('map', 22)}Оставить отзыв на картах</span>${svg('external', 18)}</a>` : ''}
-    ${site.show_website && site.website_url ? `<a class="public-button" href="${html(site.website_url)}" target="_blank" rel="noopener noreferrer"><span>${svg('globe', 22)}Официальный сайт</span>${svg('external', 18)}</a>` : ''}
+  const contactButtons = `<button type="button" class="public-button" data-open-feedback aria-haspopup="dialog"><span>${svg('star')}Оценить заведение</span></button>
+    ${site.show_maps && site.maps_url ? `<a class="public-button" href="${base + '/go/maps' + html(model.query)}"><span>${svg('map')}Оставить отзыв на картах</span></a>` : ''}
+    ${site.show_website && site.website_url ? `<a class="public-button" href="${html(site.website_url)}" target="_blank" rel="noopener noreferrer"><span>${svg('globe')}Официальный сайт</span></a>` : ''}
     ${model.tips?.length ? `<a class="public-button" target="_top" href="${base + '/tips' + html(model.query)}"><span>${tipIcon}Оставить чаевые</span></a>` : ''}`.trim();
   const groups = new Map();
   for (const item of model.items) {
@@ -689,10 +682,10 @@ function landing(model) {
     groups.get(item.category).push(item);
   }
   document.body.classList.add('landing-body', 'landing-' + site.theme);
-  app.innerHTML = `<main class="landing">
+  app.innerHTML = `<main class="landing${isMenu ? ' landing-menu' : ''}">
     ${model.draftPreview ? '<p class="public-draft-banner">Предпросмотр черновика</p>' : ''}
-    <section class="public-hero ${cover ? 'with-cover' : ''}">${cover ? `<img class="public-cover" src="${html(cover)}" alt="" fetchpriority="high">` : '<div class="public-pattern" aria-hidden="true"></div>'}
-      <div class="public-hero-inner">${siteIcon(site, true)}<p class="public-type">${html(site.type)}</p><h1>${html(site.name)}</h1>${site.description ? `<p class="public-description">${html(site.description)}</p>` : ''}</div>
+    <section class="public-hero${cover ? ' with-cover' : ''}">${cover ? `<img class="public-cover" src="${html(cover)}" alt="" fetchpriority="high">` : ''}
+      <div class="public-hero-inner">${siteIcon(site, !isMenu)}<div class="public-identity"><p class="public-type">${html(site.type)}</p><h1>${html(site.name)}</h1>${site.description ? `<p class="public-description">${html(site.description)}</p>` : ''}</div></div>
     </section>
     <div class="public-content">
       ${!isMenu && (site.opening_hours || site.wifi_name || site.wifi_password) ? `<dl class="guest-info">
@@ -708,7 +701,7 @@ function landing(model) {
           <span class="public-item-price">${money(item.price, site.currency)}</span>
         </button></li>`).join('')}</ul></section>`).join('') : '<p>Позиции появятся здесь позже.</p>'}`
        : `<div class="public-actions">
-        ${site.show_menu ? `<a class="public-button main-action" href="${base + '/menu' + html(model.query)}" ${site.menu_url ? 'target="_top"' : ''}><span>${svg('book', 22)}${label}</span>${svg('right', 20)}</a>` : ''}
+        ${site.show_menu ? `<a class="public-button main-action" href="${base + '/menu' + html(model.query)}" ${site.menu_url ? 'target="_top"' : ''}><span>${svg('book')}${label}</span></a>` : ''}
         ${contactButtons}
         </div>`}
       ${isMenu && contactButtons ? `<div class="public-actions menu-contact-actions">${contactButtons}</div>` : ''}
@@ -731,10 +724,10 @@ function feedbackDialog({ site, query }) {
   const preview = new URLSearchParams(query).has('preview');
   showModal('Оцените заведение', `<form id="guestFeedbackForm" class="form-stack" method="post">
     <fieldset class="feedback-stars"><legend class="sr-only">Оценка от 1 до 5</legend>
-      ${[1, 2, 3, 4, 5].map((rating) => `<label><input class="sr-only" name="rating" type="radio" value="${rating}" aria-label="${rating} из 5"><span aria-hidden="true">★</span></label>`).join('')}
+      ${[1, 2, 3, 4, 5].map((rating) => `<label><input class="sr-only" name="rating" type="radio" value="${rating}" aria-label="${rating} из 5"><span>${svg('star', 26)}</span></label>`).join('')}
     </fieldset>
     ${site.show_maps && site.maps_url ? `<a class="public-button" href="/${site.slug}/go/maps${html(query)}"><span>${svg('map', 20)}Оставить отзыв на картах</span>${svg('external', 18)}</a>` : ''}
-    <p class="feedback-thanks" hidden>Спасибо за оценку!</p>
+    <p class="feedback-thanks" hidden>Спасибо за оценку</p>
     <div class="feedback-extra form-stack" hidden>
       <label>Что вам не понравилось?<textarea name="comment" rows="5" maxlength="2000" placeholder="Расскажите, что можно улучшить"></textarea></label>
       <div class="form-grid">
@@ -773,7 +766,7 @@ function feedbackDialog({ site, query }) {
       await api('/api/feedback/' + site.slug + (query ?? ''), { method: 'POST', body: { ...data, id, rating: Number(data.rating) } });
       form.querySelector('.feedback-stars').hidden = true;
       extra.hidden = true;
-      thanks.textContent = 'Спасибо! Отзыв отправлен заведению.';
+      thanks.textContent = 'Отзыв отправлен заведению';
       thanks.hidden = false;
     } catch (failure) {
       error.textContent = failure.message;
@@ -806,7 +799,7 @@ function tipsLanding(model) {
     </form>`;
   } else if (view === 'tip-result') {
     const receipt = model.receipt;
-    title = receipt.paid ? (receipt.test ? 'Тестовый платёж подтверждён' : 'Спасибо за чаевые!') :
+    title = receipt.paid ? (receipt.test ? 'Тестовый платёж подтверждён' : 'Спасибо за чаевые') :
       receipt.cancelled ? 'Оплата не завершена' : 'Проверяем оплату';
     content = `<p class="tip-receipt">${money(receipt.amount, 'BYN')} · ${html(receipt.recipient)}</p>
       ${receipt.paid ? '' : receipt.cancelled
