@@ -237,12 +237,13 @@ test('guest blocks can be reordered by assigned administrators, and the rating r
   assert.equal(separate.model.site.maps_url, undefined);
   assert.doesNotMatch(separate.markup, /(?:\/go\/maps|Карты и маршрут)/);
   assert.match(separate.markup, /data-open-feedback/);
+  assert.match(separate.markup, /class="public-footer"><a href="\/about">.*<span>Nefio<\/span><\/a>/);
   const guestMenu = await page('/moka-coffee/menu?nfc=moka-demo');
   assert.deepEqual(guestMenu.model.reviewProviders, []);
   assert.match(guestMenu.markup, /data-menu-item=/);
   assert.doesNotMatch(guestMenu.markup, /public-actions|data-open-feedback|public-social/);
   assert.deepEqual([...guestMenu.markup.matchAll(/href="([^"]+)"/g)].map(([, url]) => url).filter((url) => !url.startsWith('#')),
-    ['/moka-coffee?nfc=moka-demo']);
+    ['/moka-coffee?nfc=moka-demo', '/about']);
   assert.match(guestMenu.markup, /aria-label="Категории"/);
   assert.equal((await saveGuest({ maps_url: '' }, 7)).status, 200);
   assert.equal((await request('/moka-coffee/go/maps')).status, 404);

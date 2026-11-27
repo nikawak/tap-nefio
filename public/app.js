@@ -853,7 +853,7 @@ function landing(model) {
     <div class="public-content">
       ${isCatalog ? publicCatalog(model, base, query) : guestActions(model, base, query)}
     </div>
-    <footer class="public-footer">${svg('nfc', 18)} Сделано в Тап.</footer>
+    <footer class="public-footer"><a href="/about">${svg('nfc', 18)}<span>Nefio</span></a></footer>
   </main>`;
   app.querySelector('[data-open-feedback]')?.addEventListener('click', () => feedbackDialog(model));
   app.querySelector('[data-open-booking]')?.addEventListener('click', () => bookingDialog(model));

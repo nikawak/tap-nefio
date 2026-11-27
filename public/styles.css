@@ -598,7 +598,9 @@ button.public-button { width: 100%; text-align: left; }
 .guest-wifi-info .guest-info { padding: 0; }
 .guest-wifi-info dd { user-select: all; }
 .guest-wifi-info > p { color: var(--venue-muted); font-size: .875rem; }
-.public-footer { display: flex; align-items: center; justify-content: center; gap: 4px; padding: 12px 8px; border-top: 1px solid var(--venue-line); color: var(--venue-muted); font-size: .8125rem; }
+.public-footer { display: flex; justify-content: center; border-top: 1px solid var(--venue-line); color: var(--venue-muted); font-size: .875rem; }
+.public-footer a { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 8px; }
+.public-footer a span { text-decoration: underline; text-underline-offset: .2em; }
 .public-menu-heading { display: grid; gap: 12px; margin-bottom: 20px; }
 .public-menu-heading > div { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; }
 .public-menu-heading h2 { color: var(--venue-dark); font-family: var(--venue-heading); font-size: clamp(1.75rem, 5vw, 2.25rem); font-weight: 500; line-height: 1.12; }
