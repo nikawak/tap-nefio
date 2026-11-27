@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
+import { runInNewContext } from 'node:vm';
 import { readAssets } from '../scripts/assets.mjs';
 import { seedDemo } from '../scripts/demo.mjs';
 import { databaseBinding, openDatabase } from '../scripts/node-runtime.mjs';
@@ -112,4 +113,40 @@ test('the barbershop demo ships with a published service catalog next to the exi
   const updated = await model(await request('/barbershop/services'));
   assert.equal(updated.items.length, 12);
   assert.equal(updated.items[0].price, 5200);
+});
+
+test('guest contacts and appointment links appear independently and older editor requests preserve them', async (t) => {
+  const db = openDatabase(':memory:');
+  t.after(() => db.close());
+  seedDemo(db);
+  const request = client(db, 'owner');
+  const { site } = await (await request('/api/sites/moka-coffee')).json();
+  const fields = { ...site, contact_address: 'г. Минск, Тестовая улица, 1 <этаж 2>', contact_phone: '+375 (29) 000-00-01',
+    directions_url: 'https://maps.example.test/venue', appointment_url: 'https://booking.example.test/venue' };
+  assert.equal((await request('/api/sites/moka-coffee', 'PUT', { ...fields, appointment_url: 'javascript:alert(1)' })).status, 400);
+  assert.equal((await request('/api/sites/moka-coffee', 'PUT', { ...fields, contact_phone: 'новый телефон' })).status, 400);
+  const created = await request('/api/sites', 'POST', { ...fields, slug: 'demo-contacts' });
+  assert.equal(created.status, 201);
+  const home = await model(await request('/demo-contacts'));
+  const services = await model(await request('/demo-contacts/services'));
+  const app = { innerHTML: '', querySelector: () => null, addEventListener() {} };
+  const elements = { '#app': app, '#modal': { addEventListener() {} }, '#page-data': { textContent: '{}' } };
+  const landing = runInNewContext(read('public/app.js').replace(/\bstart\(\);\s*$/, '') + '\nlanding', {
+    document: { querySelector: (selector) => elements[selector], body: { classList: { add() {} } } },
+  });
+  landing(home);
+  assert.match(app.innerHTML, /&lt;этаж 2&gt;/);
+  assert.match(app.innerHTML, /href="tel:\+375290000001"/);
+  assert.match(app.innerHTML, /href="https:\/\/maps\.example\.test\/venue".*Построить маршрут/);
+  assert.match(app.innerHTML, /href="https:\/\/booking\.example\.test\/venue".*Записаться/);
+  landing(services);
+  assert.match(app.innerHTML, /href="https:\/\/booking\.example\.test\/venue".*Записаться/);
+  const basic = { name: 'Мока', type: 'Кофейня', theme: 'coffee', currency: 'BYN', status: 'live' };
+  assert.equal((await request('/api/sites/demo-contacts', 'PUT', basic)).status, 200);
+  landing(await model(await request('/demo-contacts')));
+  assert.match(app.innerHTML, /Позвонить/);
+  assert.equal((await request('/api/sites/demo-contacts', 'PUT', { ...basic, appointment_url: '', contact_phone: '' })).status, 200);
+  landing(await model(await request('/demo-contacts')));
+  assert.doesNotMatch(app.innerHTML, /Записаться|Позвонить/);
+  assert.match(app.innerHTML, /Построить маршрут/);
 });

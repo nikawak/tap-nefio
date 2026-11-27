@@ -1,12 +1,14 @@
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createApp } from '../src/worker.js';
+import { deliverTelegramNotifications, telegramNotificationsReady } from '../src/telegram-notifications.js';
 import { readAssets } from './assets.mjs';
 import { databaseBinding, nodeServer, openDatabase, photoBucket } from './node-runtime.mjs';
 
 const {
   TAP_PUBLIC_ORIGIN, TAP_DATA_DIR, OWNER_EMAIL, OWNER_SECOND_EMAIL, OWNER_PHONE, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TIP_ENCRYPTION_KEY,
   TELEGRAM_CLIENT_ID, TELEGRAM_CLIENT_SECRET, PHONE_CODE_SECRET, MESSAGGIO_LOGIN, MESSAGGIO_SMS_SENDER, MESSAGGIO_VIBER_SENDER,
+  TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_USERNAME, TELEGRAM_WEBHOOK_SECRET,
 } = process.env;
 if (!TAP_PUBLIC_ORIGIN?.trim() || !TAP_DATA_DIR?.trim()) {
   throw new Error('Set TAP_PUBLIC_ORIGIN and TAP_DATA_DIR.');
@@ -29,7 +31,18 @@ const env = {
   DB: databaseBinding(db), BUCKET: photoBucket(photos), SELF_HOSTED: true,
   OWNER_EMAIL, OWNER_SECOND_EMAIL, OWNER_PHONE, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TIP_ENCRYPTION_KEY,
   TELEGRAM_CLIENT_ID, TELEGRAM_CLIENT_SECRET, PHONE_CODE_SECRET, MESSAGGIO_LOGIN, MESSAGGIO_SMS_SENDER, MESSAGGIO_VIBER_SENDER,
+  TAP_PUBLIC_ORIGIN: publicUrl.origin, TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_USERNAME, TELEGRAM_WEBHOOK_SECRET,
 };
+if (telegramNotificationsReady(env)) {
+  let processing;
+  const poll = () => {
+    processing ??= deliverTelegramNotifications(env)
+      .catch(() => console.error('Could not process the Telegram notification queue'))
+      .finally(() => { processing = null; });
+  };
+  setInterval(poll, 20000).unref();
+  poll();
+}
 const app = createApp(readAssets());
 const port = Number(process.env.PORT || 4173);
 nodeServer(() => app, env, () => publicUrl.origin)

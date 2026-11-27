@@ -1,7 +1,11 @@
+import {
+  configureTelegramWebhook, deliverTelegramNotifications, telegramNotificationsReady, telegramPairCode, telegramStartLink, telegramWebhookPath,
+} from './telegram-notifications.js';
+
 const actionColumns = { maps: 'maps_url', telegram: 'telegram_url', instagram: 'instagram_url', vk: 'vk_url' };
 const contactColumns = Object.values(actionColumns);
 const reviewColumns = { yandex: 'yandex_review_url', google: 'google_review_url' };
-const guestBlocks = ['hours', 'wifi', 'menu', 'services', 'booking', 'feedback', 'website', 'tips', 'telegram', 'instagram', 'vk'];
+const guestBlocks = ['hours', 'wifi', 'menu', 'services', 'appointment', 'booking', 'contacts', 'feedback', 'website', 'tips', 'telegram', 'instagram', 'vk'];
 const catalogs = {
   menu: { kind: 'menu', url: 'menu_url', visible: 'show_menu', version: 'menu_order_version', linkLabel: 'внешнее меню' },
   services: { kind: 'services', url: 'services_url', visible: 'show_services', version: 'services_order_version', linkLabel: 'внешний список услуг' },
@@ -551,6 +555,21 @@ function guestInfoFields(data) {
   return { opening_hours: hours, wifi_name: wifiName, wifi_password: wifiPassword ?? null, show_hours, show_wifi };
 }
 
+function guestContactFields(data) {
+  const phone = data.contact_phone === undefined ? null : field(data, 'contact_phone', 32).replace(/[ ()-]/g, '');
+  if (phone && !/^\+\d{7,15}$/.test(phone)) fail(400, 'Укажите телефон с кодом страны, начиная с +.');
+  const link = (key, label) => {
+    if (data[key] === undefined) return null;
+    const value = field(data, key, 2048);
+    if (!value) return '';
+    const url = httpsLink(value);
+    if (!url) fail(400, `Укажите полную HTTPS-ссылку ${label}.`);
+    return url.href;
+  };
+  return { contact_address: data.contact_address === undefined ? null : field(data, 'contact_address', 240), contact_phone: phone,
+    directions_url: link('directions_url', 'для маршрута'), appointment_url: link('appointment_url', 'для записи') };
+}
+
 function siteFields(data, site) {
   const name = field(data, 'name', 80, true);
   const type = field(data, 'type', 50, true);
@@ -561,7 +580,7 @@ function siteFields(data, site) {
   if (!themes.includes(theme) || !currencies.includes(currency) || !['draft', 'live'].includes(status)) fail(400, 'Проверьте настройки страницы.');
   return {
     name, type, description, theme, logo_url: address(data, 'logo_url', true), cover_url: address(data, 'cover_url', true),
-    currency, status, ...siteLinks(data, site), ...guestInfoFields(data),
+    currency, status, ...siteLinks(data, site), ...guestInfoFields(data), ...guestContactFields(data),
   };
 }
 
@@ -687,7 +706,9 @@ async function saveSite(request, env, site) {
         maps_url=COALESCE(?, maps_url), telegram_url=?, instagram_url=?, vk_url=?, website_url=COALESCE(?, website_url),
         show_website=COALESCE(?, show_website), hidden_links=COALESCE(?, hidden_links), show_maps=COALESCE(?, show_maps),
         opening_hours=COALESCE(?, opening_hours), wifi_name=COALESCE(?, wifi_name), wifi_password=COALESCE(?, wifi_password),
-        show_hours=COALESCE(?, show_hours), show_wifi=COALESCE(?, show_wifi), logo_key=?, cover_key=?
+        show_hours=COALESCE(?, show_hours), show_wifi=COALESCE(?, show_wifi), contact_address=COALESCE(?, contact_address),
+        contact_phone=COALESCE(?, contact_phone), directions_url=COALESCE(?, directions_url), appointment_url=COALESCE(?, appointment_url),
+        logo_key=?, cover_key=?
         WHERE id=? AND logo_key IS ? AND cover_key IS ? AND theme=COALESCE(?, theme)`,
         ...Object.values(fields), keys.logo, keys.cover, site.id, site.logo_key, site.cover_key,
         data.previous_theme === undefined ? null : field(data, 'previous_theme', 20)).run();
@@ -695,9 +716,11 @@ async function saveSite(request, env, site) {
     } else {
       await q(db, `INSERT INTO sites (id, slug, name, type, description, theme, logo_url, cover_url, currency, status,
         maps_url, telegram_url, instagram_url, vk_url, website_url, show_website, hidden_links, show_maps,
-        opening_hours, wifi_name, wifi_password, show_hours, show_wifi, nfc_key, created_at, logo_key, cover_key)
+        opening_hours, wifi_name, wifi_password, show_hours, show_wifi,
+        contact_address, contact_phone, directions_url, appointment_url, nfc_key, created_at, logo_key, cover_key)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ''), ?, ?, ?, COALESCE(?, ''), COALESCE(?, 0), COALESCE(?, '[]'), COALESCE(?, 0),
-          COALESCE(?, ''), COALESCE(?, ''), COALESCE(?, ''), ?, ?, ?, ?, ?, ?)`,
+          COALESCE(?, ''), COALESCE(?, ''), COALESCE(?, ''), ?, ?,
+          COALESCE(?, ''), COALESCE(?, ''), COALESCE(?, ''), COALESCE(?, ''), ?, ?, ?, ?)`,
         newId(), slug, ...Object.values(fields), newId(), new Date().toISOString(), keys.logo, keys.cover).run();
     }
   } catch (error) {
@@ -1076,7 +1099,7 @@ async function saveGuestLayout(request, db, site) {
   let order = Array.isArray(data.guest_order) ? data.guest_order.filter((key) => key !== 'maps') : data.guest_order;
   if (Array.isArray(order) && order.length < guestBlocks.length) {
     const missing = guestBlocks.filter((key) => !order.includes(key));
-    if (missing.every((key) => ['booking', 'services'].includes(key))) {
+    if (missing.every((key) => ['booking', 'services', 'contacts', 'appointment'].includes(key))) {
       // Merge newer buttons into the order sent by older clients.
       siteWithPhotos(site).guest_order.forEach((key, index) => {
         if (missing.includes(key)) order.splice(index, 0, key);
@@ -1108,7 +1131,14 @@ async function saveGuestLayout(request, db, site) {
   }
 }
 
-async function recordBooking(request, url, db, slug) {
+function bookingInstant(date, time) {
+  const clock = new Date(`${date}T${time}:00Z`);
+  const minsk = Date.parse(`${dayKey(clock)}T${bookingClock.format(clock)}:00Z`);
+  return Math.floor((2 * clock.getTime() - minsk) / 1000);
+}
+
+async function recordBooking(request, url, env, slug) {
+  const db = env.DB;
   if (request.headers.get('origin') !== url.origin || url.searchParams.has('preview')) {
     fail(403, 'Откройте форму на опубликованной странице заведения.');
   }
@@ -1127,30 +1157,106 @@ async function recordBooking(request, url, db, slug) {
   }
   const name = field(data, 'guest_name', 80, true);
   const comment = field(data, 'comment', 500);
-  const upcoming = `${date} ${time}` > `${dayKey(now)} ${bookingClock.format(now)}`;
+  const visitAt = bookingInstant(date, time);
+  const code = typeof data.telegram_code === 'string' && telegramPairCode.test(data.telegram_code) && telegramNotificationsReady(env)
+    ? data.telegram_code : null;
+  const codeHash = code ? await digest(code) : null;
+  const result = (row, status) => json({ ok: true,
+    ...(codeHash && row.telegram_code_hash === codeHash ? { telegram: telegramStartLink(env, 'guest', code) } : {}),
+  }, status);
   const saved = await q(db, `INSERT INTO site_bookings
-    (site_id, id, visit_date, visit_time, party_size, guest_name, phone, comment, created_at)
-    SELECT id, ?, ?, ?, ?, ?, ?, ?, ? FROM sites WHERE slug=? AND status='live' AND show_booking=1 AND ?=1
-    ON CONFLICT(site_id, id) DO NOTHING RETURNING id`,
-    data.id, date, time, data.party_size, name, phone, comment, now.toISOString(), slug, Number(upcoming)).first();
-  if (saved) return json({ ok: true }, 201);
+    (site_id, id, visit_date, visit_time, party_size, guest_name, phone, comment, created_at, visit_at, telegram_code_hash)
+    SELECT s.id, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN n.guest_enabled=1 AND NOT EXISTS (
+      SELECT 1 FROM site_bookings WHERE telegram_code_hash=?
+    ) THEN ? END FROM sites s LEFT JOIN site_notifications n ON n.site_id=s.id
+    WHERE s.slug=? AND s.status='live' AND s.show_booking=1 AND ?>?
+    ON CONFLICT(site_id, id) DO NOTHING RETURNING telegram_code_hash`,
+    data.id, date, time, data.party_size, name, phone, comment, now.toISOString(), visitAt, codeHash, codeHash,
+    slug, visitAt, Math.floor(now.getTime() / 1000)).first();
+  if (saved) return result(saved, 201);
   const site = await findSite(db, slug);
-  if (site && await q(db, 'SELECT 1 FROM site_bookings WHERE site_id=? AND id=?', site.id, data.id).first()) return json({ ok: true });
+  const existing = site && await q(db, 'SELECT telegram_code_hash FROM site_bookings WHERE site_id=? AND id=?', site.id, data.id).first();
+  if (existing) return result(existing, 200);
   if (site?.status !== 'live' || !site.show_booking) fail(404, 'Бронирование для этого заведения недоступно.');
   fail(400, 'Выберите дату и время в будущем по Минску.');
 }
 
+async function notificationState(env, siteId) {
+  const row = await q(env.DB, 'SELECT staff_chat_id, guest_enabled FROM site_notifications WHERE site_id=?', siteId).first();
+  return { ready: telegramNotificationsReady(env), staffConnected: !!row?.staff_chat_id, guestEnabled: !!row?.guest_enabled };
+}
+
+async function ensureTelegramNotifications(env) {
+  if (!telegramNotificationsReady(env)) fail(503, 'Бот Telegram ещё не настроен на сервере.');
+  const problem = await configureTelegramWebhook(env);
+  if (problem === 'conflict') fail(409, 'У этого бота уже есть подключение к другому приложению. Используйте отдельного бота Nefio.');
+  if (problem === 'username') fail(409, 'Имя бота в настройках сервера не совпадает с токеном.');
+  if (problem) fail(502, 'Telegram не подтвердил подключение. Повторите попытку позже.');
+}
+
+async function changeNotifications(request, env, siteId) {
+  const db = env.DB;
+  if (request.method === 'POST') {
+    await ensureTelegramNotifications(env);
+    const code = randomToken();
+    await q(db, `INSERT INTO site_notifications (site_id, staff_code_hash, staff_code_expires) VALUES (?, ?, ?)
+      ON CONFLICT(site_id) DO UPDATE SET staff_code_hash=excluded.staff_code_hash, staff_code_expires=excluded.staff_code_expires`,
+      siteId, await digest(code), nowSeconds() + 900).run();
+    return json({ telegram: telegramStartLink(env, 'staff', code) });
+  }
+  if (request.method === 'DELETE') {
+    await q(db, `UPDATE site_notifications SET staff_chat_id='', staff_code_hash=NULL, staff_code_expires=0 WHERE site_id=?`, siteId).run();
+    return json({ ok: true });
+  }
+  const enabled = optionalFlag(await body(request, 1024), 'guest_enabled');
+  if (enabled === null) fail(400, 'Укажите, нужно ли отправлять уведомления гостям.');
+  if (enabled) await ensureTelegramNotifications(env);
+  await q(db, `INSERT INTO site_notifications (site_id, guest_enabled) VALUES (?, ?)
+    ON CONFLICT(site_id) DO UPDATE SET guest_enabled=excluded.guest_enabled`, siteId, enabled).run();
+  return json({ ok: true });
+}
+
+async function telegramNotificationWebhook(request, env) {
+  if (!telegramNotificationsReady(env)) fail(404, 'Раздел не найден.');
+  if (request.headers.get('x-telegram-bot-api-secret-token') !== env.TELEGRAM_WEBHOOK_SECRET) fail(403, 'Доступ закрыт.');
+  const { message } = await body(request, 65536);
+  const chatId = message?.chat?.id;
+  if (message?.chat?.type !== 'private' || !Number.isSafeInteger(chatId) || chatId <= 0 || typeof message.text !== 'string') return json({ ok: true });
+  const db = env.DB;
+  const reply = (text) => json({ method: 'sendMessage', chat_id: chatId, text });
+  if (message.text.trim() === '/stop') {
+    await q(db, "UPDATE site_bookings SET telegram_chat_id='' WHERE telegram_chat_id=?", String(chatId)).run();
+    return reply('Уведомления гостя отключены. Служебные оповещения можно отключить в панели Nefio.');
+  }
+  const start = /^\/start\s+(staff|guest)_([A-Za-z0-9_-]{32,43})$/.exec(message.text.trim());
+  if (!start) return json({ ok: true });
+  const hash = await digest(start[2]);
+  const now = nowSeconds();
+  if (start[1] === 'staff') {
+    const linked = await q(db, `UPDATE site_notifications SET staff_chat_id=?, staff_code_hash=NULL, staff_code_expires=0
+      WHERE staff_code_hash=? AND staff_code_expires>? RETURNING site_id`, String(chatId), hash, now).first();
+    return reply(linked ? 'Чат подключён. Сюда будут приходить уведомления о новых заявках и приватных отзывах.' : 'Ссылка уже использована или истекла. Создайте новую в панели Nefio.');
+  }
+  const linked = await q(db, `UPDATE site_bookings SET telegram_chat_id=?, telegram_code_hash=NULL
+    WHERE telegram_code_hash=? AND visit_at>? AND EXISTS (
+      SELECT 1 FROM site_notifications n WHERE n.site_id=site_bookings.site_id AND n.guest_enabled=1
+    ) RETURNING id`, String(chatId), hash, now).first();
+  return reply(linked ? 'Уведомления по заявке подключены. Чтобы отключить уведомления гостя, отправьте /stop.' : 'Ссылка уже использована или больше не действует.');
+}
+
 async function bookingsInbox(db, params, { filter, args }, siteId) {
+  const record = params.get('id');
+  if (record && !uuidPattern.test(record)) fail(400, 'Проверьте ссылку на заявку.');
   const status = params.get('status');
-  const filtered = ['pending', ...Object.keys(bookingTransitions)].includes(status);
+  const filtered = !record && ['pending', ...Object.keys(bookingTransitions)].includes(status);
   const requestedPage = Number(params.get('page'));
-  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 && requestedPage < 100000 ? requestedPage : 1;
+  const page = !record && Number.isSafeInteger(requestedPage) && requestedPage > 0 && requestedPage < 100000 ? requestedPage : 1;
   const slug = !siteId && params.get('site');
   const rows = await all(db, `SELECT b.id, b.visit_date, b.visit_time, b.party_size, b.guest_name, b.phone, b.comment, b.status,
     b.created_at, s.slug AS site_slug, s.name AS site_name FROM site_bookings b JOIN sites s ON s.id=b.site_id
-    ${filter || 'WHERE 1=1'}${siteId ? ' AND s.id=?' : ''}${slug ? ' AND s.slug=?' : ''}${filtered ? ' AND b.status=?' : ''}
+    ${filter || 'WHERE 1=1'}${siteId ? ' AND s.id=?' : ''}${slug ? ' AND s.slug=?' : ''}${record ? ' AND b.id=?' : ''}${filtered ? ' AND b.status=?' : ''}
     ORDER BY b.created_at DESC, b.id DESC, s.slug LIMIT 25 OFFSET ?`,
-    ...args, ...(siteId ? [siteId] : []), ...(slug ? [slug] : []), ...(filtered ? [status] : []), (page - 1) * 24);
+    ...args, ...(siteId ? [siteId] : []), ...(slug ? [slug] : []), ...(record ? [record] : []), ...(filtered ? [status] : []), (page - 1) * 24);
   return json({ bookings: rows.slice(0, 24), page, hasMore: rows.length > 24 });
 }
 
@@ -1187,10 +1293,12 @@ async function recordFeedback(request, url, db, slug) {
 }
 
 async function feedbackInbox(db, params, { filter, args }, siteId) {
+  const record = params.get('id');
+  if (record && !uuidPattern.test(record)) fail(400, 'Проверьте ссылку на отзыв.');
   const rating = params.get('rating');
   const status = params.get('status');
   const requestedPage = Number(params.get('page'));
-  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 && requestedPage < 100000 ? requestedPage : 1;
+  const page = !record && Number.isSafeInteger(requestedPage) && requestedPage > 0 && requestedPage < 100000 ? requestedPage : 1;
   const sorts = {
     recent: 'f.created_at DESC, f.id DESC',
     oldest: 'f.created_at ASC, f.id ASC',
@@ -1205,8 +1313,11 @@ async function feedbackInbox(db, params, { filter, args }, siteId) {
   else if (slug) { clauses.push('s.slug=?'); values.push(slug); }
   const scoped = `FROM site_feedback f JOIN sites s ON s.id=f.site_id${filter || ' WHERE 1=1'}`;
   const unread = (await q(db, `SELECT COUNT(*) AS count ${scoped}${clauses.length ? ' AND ' + clauses[0] : ''} AND f.read_at IS NULL`, ...values).first()).count;
-  if (['1', '2', '3'].includes(rating)) { clauses.push('rating=?'); values.push(Number(rating)); }
-  if (status === 'unread' || status === 'read') clauses.push(status === 'unread' ? 'read_at IS NULL' : 'read_at IS NOT NULL');
+  if (record) { clauses.push('f.id=?'); values.push(record); }
+  else {
+    if (['1', '2', '3'].includes(rating)) { clauses.push('rating=?'); values.push(Number(rating)); }
+    if (status === 'unread' || status === 'read') clauses.push(status === 'unread' ? 'read_at IS NULL' : 'read_at IS NOT NULL');
+  }
   const conditions = clauses.length ? ' AND ' + clauses.join(' AND ') : '';
   const rows = await all(db, `SELECT f.id, f.rating, f.comment, f.guest_name, f.guest_place, f.source, f.created_at, f.read_at,
     s.slug AS site_slug, s.name AS site_name ${scoped}${conditions}
@@ -1296,7 +1407,7 @@ async function api(request, url, env) {
   const feedback = url.pathname.match(/^\/api\/feedback\/([a-z0-9-]+)$/);
   if (feedback && request.method === 'POST') return recordFeedback(request, url, db, feedback[1]);
   const booking = url.pathname.match(/^\/api\/bookings\/([a-z0-9-]+)$/);
-  if (booking && request.method === 'POST') return recordBooking(request, url, db, booking[1]);
+  if (booking && request.method === 'POST') return recordBooking(request, url, env, booking[1]);
   const user = await actor(request, env);
   if (url.pathname === '/api/session' && request.method === 'GET') return json({
     user, ownerConfigured: !!env.OWNER_EMAIL || !!env.DEMO_MODE, googleAvailable: googleReady(env, url),
@@ -1327,10 +1438,15 @@ async function api(request, url, env) {
     if (user.role !== 'owner') fail(403, 'Создавать сайты может владелец.');
     return json({ site: await saveSite(request, env) }, 201);
   }
-  const route = url.pathname.match(/^\/api\/sites\/([a-z0-9-]+)(?:\/(items|services|admins|tips|website|feedback|bookings|theme|guest)(?:\/([^/]+))?)?$/);
+  const route = url.pathname.match(/^\/api\/sites\/([a-z0-9-]+)(?:\/(items|services|admins|tips|website|feedback|bookings|theme|guest|notifications)(?:\/([^/]+))?)?$/);
   if (!route) fail(404, 'Раздел не найден.');
   const [, slug, section, key] = route;
   const site = await allowedSite(db, user, slug);
+  if (section === 'notifications' && !key) {
+    if (user.role !== 'owner') fail(403, 'Уведомления настраивает владелец.');
+    if (method === 'GET') return json(await notificationState(env, site.id));
+    if (['POST', 'PUT', 'DELETE'].includes(method)) return changeNotifications(request, env, site.id);
+  }
   if (!section && method === 'GET') {
     // Read the position list and its order version from the same snapshot.
     const catalog = url.searchParams.get('catalog') === 'services' ? catalogs.services : catalogs.menu;
@@ -1686,13 +1802,18 @@ async function publicPage(request, url, env, assets, ctx) {
   const tips = catalog ? [] : activeTips(await tipSettings(db, site.id), env);
   const response = shell(assets, { view: catalog?.kind ?? 'public', site: publicSite,
     items: items.map((item) => itemWithPhoto(item, !!previewAllowed)), tips,
-    reviewProviders: catalog ? [] : reviewProviders(site), query, draftPreview: site.status === 'draft' });
+    reviewProviders: catalog ? [] : reviewProviders(site), query, draftPreview: site.status === 'draft',
+    bookingTelegramAvailable: !catalog && !previewAllowed && !!site.show_booking && telegramNotificationsReady(env) &&
+      !!(await q(db, 'SELECT 1 FROM site_notifications WHERE site_id=? AND guest_enabled=1', site.id).first()) });
   if (!previewAllowed && request.method === 'GET') await trackAnalytics(ctx, count(db, site, catalog ? 'menu' : 'visit', source));
   return response;
 }
 
 export function createApp(assets) {
   return {
+    scheduled(_event, env, ctx) {
+      ctx.waitUntil(deliverTelegramNotifications(env));
+    },
     async fetch(request, env, ctx) {
       try {
         const url = new URL(request.url);
@@ -1703,6 +1824,7 @@ export function createApp(assets) {
         if (oidc) return await oidcAuth(request, url, env, oidc[1]);
         if (['/auth/phone/start', '/auth/phone/verify'].includes(path)) return await phoneAuth(request, url, env, ctx);
         if (path === '/auth/password') return await passwordAuth(request, url, env);
+        if (path === telegramWebhookPath && request.method === 'POST') return await telegramNotificationWebhook(request, env);
         if (request.method === 'POST' && path.startsWith('/webhooks/bepaid/')) {
           return await bePaidNotification(request, env, path.slice('/webhooks/bepaid/'.length));
         }

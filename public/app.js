@@ -42,6 +42,7 @@ const icons = {
   telegram: '<path d="m3 11 17-7-3 16-6-5-3 3v-5zM8 13l7-5"/>',
   instagram: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17" cy="7" r="1" fill="currentColor" stroke="none"/>',
   map: '<path d="M19 10c0 5-7 10.5-7 10.5S5 15 5 10a7 7 0 0 1 14 0Z"/><circle cx="12" cy="10" r="2"/>',
+  phone: '<path d="M8 3H5a2 2 0 0 0-2 2c0 8.8 7.2 16 16 16a2 2 0 0 0 2-2v-3l-5-2-2 2a12 12 0 0 1-6-6l2-2-2-5Z"/>',
   link: '<path d="M10 13a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1.5 1.5m2.5 5.5a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1.5-1.5"/>',
   search: '<circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4 4"/>',
   shield: '<path d="M12 22s7.5-3.6 7.5-10V5L12 2 4.5 5v7C4.5 18.4 12 22 12 22Z"/><path d="m9 12 2 2 4-4"/>',
@@ -61,7 +62,7 @@ const bookingStatuses = { pending: 'Новая', confirmed: 'Подтвержд�
 const bookingActions = { pending: [['confirmed', 'Подтвердить'], ['declined', 'Отклонить']], confirmed: [['cancelled', 'Отменить бронь']] };
 const guestBlockLabels = {
   hours: 'Время работы', wifi: 'Гостевой Wi-Fi', menu: 'Меню', services: 'Услуги', booking: 'Забронировать столик', feedback: 'Оценить заведение',
-  website: 'Официальный сайт', tips: 'Чаевые',
+  contacts: 'Контакты и маршрут', appointment: 'Записаться', website: 'Официальный сайт', tips: 'Чаевые',
   telegram: 'Telegram', instagram: 'Instagram', vk: 'ВКонтакте',
 };
 const catalogEditor = {
@@ -126,7 +127,10 @@ function route() {
   const [, , root, slug, tab] = location.pathname.split('/');
   const section = navigation.find(([name]) => name === root);
   if (root === 'sites' && slug) return { name: 'detail', title: state.details?.site?.name || 'Мини-сайт', slug, tab: tab || 'menu' };
-  if (section) return { name: root, title: section[1], site: new URLSearchParams(location.search).get('site') || '' };
+  if (section) {
+    const params = new URLSearchParams(location.search);
+    return { name: root, title: section[1], site: params.get('site') || '', record: params.get('id') || '' };
+  }
   return { name: 'overview', title: 'Обзор' };
 }
 
@@ -498,6 +502,15 @@ function siteForm(site = {}) {
   <fieldset class="form-stack site-contact-fields"><legend>Ссылки для гостей</legend>
     ${Object.entries(siteLinks).map(([key, [label, placeholder]]) => siteLinkOption(site, key, label, placeholder)).join('')}
   </fieldset>
+  <fieldset class="form-stack site-contact-fields"><legend>Контакты и онлайн-запись</legend>
+    <div class="form-grid">
+      <label>Адрес заведения<input name="contact_address" maxlength="240" autocomplete="off" value="${value('contact_address')}"></label>
+      <label>Телефон для гостей<input name="contact_phone" type="tel" maxlength="32" autocomplete="off" placeholder="+375…" value="${value('contact_phone')}"></label>
+      <label>Ссылка для маршрута<input name="directions_url" type="url" maxlength="2048" placeholder="https://…" value="${value('directions_url')}"></label>
+      <label>Ссылка на сервис записи<input name="appointment_url" type="url" maxlength="2048" placeholder="https://…" value="${value('appointment_url')}"></label>
+    </div>
+    <p class="muted">Пустые поля скрыты на гостевой странице.</p>
+  </fieldset>
   <fieldset class="form-stack site-contact-fields"><legend>Для гостей</legend>
     ${siteOption('show_hours', 'Время работы', hoursEnabled, `<label>График работы
       <textarea name="opening_hours" maxlength="240" rows="3" placeholder="Пн–Пт 08:00–21:00" data-site-required ${hoursEnabled ? 'required' : 'disabled'}>${value('opening_hours')}</textarea>
@@ -551,6 +564,30 @@ function bookingSettings(site) {
       <p class="muted">На опубликованной странице появится кнопка «Забронировать столик».</p>
       <p class="form-error" role="alert"></p>
       <div class="form-footer"><button type="submit" class="button primary">Сохранить</button></div>
+    </form></details>`;
+}
+
+function telegramSettings(settings) {
+  if (!settings) return `<details class="panel form-panel feedback-settings telegram-settings"><summary>Уведомления Telegram</summary>
+    <p class="muted">Статус уведомлений временно недоступен.</p>${button('Обновить', '', 'telegram-refresh', 'secondary')}</details>`;
+  const { ready, staffConnected, guestEnabled } = settings;
+  return `<details class="panel form-panel feedback-settings telegram-settings"><summary>Уведомления Telegram</summary>
+    ${ready ? '' : '<p class="muted">Бот Nefio ещё не подключён на сервере.</p>'}
+    <div class="form-stack">
+      <p>${staffConnected ? 'Служебный чат подключён.' : 'Служебный чат ещё не подключён.'} Оповещения приходят при новой заявке на столик или новом приватном отзыве.</p>
+      <div class="heading-actions">
+        ${ready ? button(staffConnected ? 'Сменить чат' : 'Подключить чат', 'telegram', 'telegram-connect', 'secondary') : ''}
+        ${staffConnected ? button('Отключить чат', '', 'telegram-disconnect', 'secondary') : ''}
+        ${ready ? button('Проверить статус', '', 'telegram-refresh', 'secondary') : ''}
+      </div>
+      <p data-telegram-connect hidden>Откройте ссылку с аккаунта сотрудника и нажмите «Запустить» в личном чате с ботом. Ссылка действует 15 минут.
+        <a class="text-link" data-telegram-connect-link target="_blank" rel="noopener noreferrer">Открыть Telegram</a></p>
+    </div>
+    <form id="telegramSettingsForm" class="form-stack">
+      <label class="check-label"><input type="checkbox" name="guest_enabled" ${guestEnabled ? 'checked' : ''} ${ready || guestEnabled ? '' : 'disabled'}>Уведомлять гостей о статусе брони и напоминать о визите</label>
+      <p class="muted">Гость сам подключает уведомления после отправки заявки.</p>
+      <p class="form-error" role="alert"></p>
+      ${ready || guestEnabled ? '<div class="form-footer"><button type="submit" class="button primary">Сохранить</button></div>' : ''}
     </form></details>`;
 }
 
@@ -702,6 +739,13 @@ function reportUnavailable(showSites = false) {
     ${showSites ? '<a class="button primary" href="/admin/sites" data-nav>К мини-сайтам</a>' : ''}</section>`;
 }
 
+function inboxActions(label) {
+  const { name, site, record } = route();
+  const href = '/admin/' + name + (site ? '?' + new URLSearchParams({ site }) : '');
+  return `<div class="heading-actions">${record ? linkButton(label, '', href, 'data-nav') : ''}
+    ${button('Обновить', '', 'retry-load', 'secondary')}</div>`;
+}
+
 function feedbackContent(inbox, sites) {
   const { status, rating, sort } = state.feedbackQuery;
   const options = (values, selected) => values.map(([value, label]) =>
@@ -709,14 +753,14 @@ function feedbackContent(inbox, sites) {
   const format = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Minsk' });
   return `<section class="feedback-inbox">
     <div class="page-heading"><div><h1>Отзывы</h1><p>${inbox.unread ? `Непрочитанных отзывов: ${nf.format(inbox.unread)}` : 'Приватные отзывы с оценками от 1 до 3.'}</p></div>
-      ${button('Обновить', '', 'retry-load', 'secondary')}</div>
-    <form id="feedbackFilters" class="panel feedback-filters form-stack">
+      ${inboxActions('Все отзывы')}</div>
+    ${route().record ? '' : `<form id="feedbackFilters" class="panel feedback-filters form-stack">
       <label>Мини-сайт<select name="site">${siteOptions(sites)}</select></label>
       <label>Статус<select name="status">${options([['', 'Все'], ['unread', 'Непрочитанные'], ['read', 'Прочитанные']], status)}</select></label>
       <label>Оценка<select name="rating">${options([['', 'Любая'], ['1', '1 звезда'], ['2', '2 звезды'], ['3', '3 звезды']], rating)}</select></label>
       <label>Сортировка<select name="sort">${options([['recent', 'Сначала новые'], ['oldest', 'Сначала старые'], ['lowest', 'Сначала низкие оценки'], ['highest', 'Сначала высокие оценки']], sort)}</select></label>
       <button class="button secondary" type="submit">Применить</button>
-    </form>
+    </form>`}
     ${inbox.reviews.length ? inbox.reviews.map((review) => `<article class="panel feedback-card">
       <header><strong class="feedback-score" aria-label="Оценка ${review.rating} из 5">${svg('star')}${review.rating} / 5</strong>
         ${review.read_at ? '' : '<span class="status">Новый</span>'}</header>
@@ -737,13 +781,13 @@ function bookingsContent({ bookings, page, hasMore }, sites) {
   const format = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Minsk' });
   return `<section class="bookings">
     <div class="page-heading"><div><h1>Бронирование</h1><p>Заявки на столики. Время визита указано по Минску.</p></div>
-      ${button('Обновить', '', 'retry-load', 'secondary')}</div>
-    <form id="bookingsFilters" class="panel feedback-filters form-stack">
+      ${inboxActions('Все заявки')}</div>
+    ${route().record ? '' : `<form id="bookingsFilters" class="panel feedback-filters form-stack">
       <label>Мини-сайт<select name="site">${siteOptions(sites)}</select></label>
       <label>Статус<select name="status"><option value="">Все заявки</option>
         ${Object.entries(bookingStatuses).map(([key, label]) => `<option value="${key}" ${status === key ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
       <button class="button secondary" type="submit">Показать</button>
-    </form>
+    </form>`}
     ${bookings.length ? bookings.map((booking) => `<article class="panel booking-card">
       <header><strong>${html(dateLabel(booking.visit_date, { day: 'numeric', month: 'long', year: 'numeric' }))} · ${html(booking.visit_time)}</strong>
         <span>${bookingStatuses[booking.status]}</span></header>
@@ -764,7 +808,7 @@ function bookingsContent({ bookings, page, hasMore }, sites) {
 }
 
 function detailContent(current, bundle) {
-  const { site, items, admins } = bundle;
+  const { site, items, admins, notifications } = bundle;
   const base = '/admin/sites/' + site.slug;
   const owner = state.user.role === 'owner';
   const tabs = [['menu', 'Меню', 'book', base], ['services', 'Услуги', 'book', base + '/services'],
@@ -780,13 +824,17 @@ function detailContent(current, bundle) {
     ${button('Скопировать', 'copy', 'copy-nfc', 'secondary')}</div>
     <nav class="tabs" aria-label="Редактирование мини-сайта">${tabs.map(([key, label, icon, href]) => `<a data-nav href="${href}" class="${active === key ? 'selected' : ''}" ${active === key ? 'aria-current="page"' : ''}>${svg(icon, 18)}${label}</a>`).join('')}</nav>
     ${Object.hasOwn(catalogEditor, active) ? itemsContent(site, items, catalogEditor[active]) : ''}
-    ${active === 'guest' ? `<div class="guest-settings">${bookingSettings(site)}${reviewSettings(site)}${guestLayoutForm(site)}</div>` : ''}
+    ${active === 'guest' ? `<div class="guest-settings">${bookingSettings(site)}${reviewSettings(site)}${owner ? telegramSettings(notifications) : ''}${guestLayoutForm(site)}</div>` : ''}
     ${active === 'settings' ? `<section class="panel form-panel"><h2>Настройки страницы</h2>${siteForm(site)}</section>` : ''}
     ${active === 'theme' ? `<section class="panel form-panel"><h2>Оформление страницы</h2><form id="themeForm" class="form-stack">
       <input type="hidden" name="previous_theme" value="${html(site.theme)}">${themePicker(site.theme)}
       <p class="form-error" role="alert"></p><div class="form-footer"><button type="submit" class="button primary">Сохранить тему</button></div>
     </form></section>` : ''}
     ${active === 'access' ? accessContent(admins) : ''}`;
+}
+
+function appointmentButton(url) {
+  return `<a class="public-button main-action" href="${html(url)}" target="_blank" rel="noopener noreferrer"><span>${svg('calendar')}Записаться</span></a>`;
 }
 
 function guestActions({ site, reviewProviders, tips }, base, query) {
@@ -800,9 +848,16 @@ function guestActions({ site, reviewProviders, tips }, base, query) {
       </dl>
       ${site.wifi_password ? '<button type="button" class="public-button" data-copy-wifi>Скопировать пароль</button>' : ''}
       <p>Откройте настройки Wi-Fi на телефоне и выберите гостевую сеть.</p></div></details>`,
-    menu: site.show_menu && `<a class="public-button main-action" href="${base}/menu${query}" ${site.menu_url ? 'target="_top"' : ''}><span>${svg('book')}Открыть меню</span></a>`,
-    services: site.show_services && `<a class="public-button${site.show_menu ? '' : ' main-action'}" href="${base}/services${query}" ${site.services_url ? 'target="_top"' : ''}><span>${svg('book')}Смотреть услуги</span></a>`,
+    menu: site.show_menu && `<a class="public-button${site.appointment_url ? '' : ' main-action'}" href="${base}/menu${query}" ${site.menu_url ? 'target="_top"' : ''}><span>${svg('book')}Открыть меню</span></a>`,
+    services: site.show_services && `<a class="public-button${site.show_menu || site.appointment_url ? '' : ' main-action'}" href="${base}/services${query}" ${site.services_url ? 'target="_top"' : ''}><span>${svg('book')}Смотреть услуги</span></a>`,
+    appointment: site.appointment_url && appointmentButton(site.appointment_url),
     booking: site.show_booking && `<button type="button" class="public-button" data-open-booking aria-haspopup="dialog"><span>${svg('calendar')}Забронировать столик</span></button>`,
+    contacts: (site.contact_address || site.contact_phone || site.directions_url) && `<div class="guest-contacts">
+      ${site.contact_address ? `<dl class="guest-info"><dt>${svg('map')} Адрес</dt><dd>${html(site.contact_address)}</dd></dl>` : ''}
+      ${site.contact_phone || site.directions_url ? `<div class="guest-contact-links">
+        ${site.contact_phone ? `<a class="public-button" href="tel:${html(site.contact_phone)}"><span>${svg('phone')}Позвонить</span></a>` : ''}
+        ${site.directions_url ? `<a class="public-button" href="${html(site.directions_url)}" target="_blank" rel="noopener noreferrer"><span>${svg('map')}Построить маршрут</span></a>` : ''}
+      </div>` : ''}</div>`,
     feedback: reviewProviders?.length && `<button type="button" class="public-button" data-open-feedback aria-haspopup="dialog"><span>${svg('star')}Оценить заведение</span></button>`,
     website: site.show_website && site.website_url && `<a class="public-button" href="${html(site.website_url)}" target="_blank" rel="noopener noreferrer"><span>${svg('globe')}Официальный сайт</span></a>`,
     tips: tips?.length && `<a class="public-button" target="_top" href="${base}/tips${query}"><span>${tipIcon}Оставить чаевые</span></a>`,
@@ -828,6 +883,7 @@ function publicCatalog(model, base, query) {
   return `<header class="public-menu-heading"><a href="${base + query}">На страницу заведения</a>
     <div><h2>${services ? 'Услуги' : 'Меню'}</h2>${site[other.visible] ? `<a href="${base}/${other.path}${query}" ${site[other.url] ? 'target="_top"' : ''}>${other.button}</a>` : ''}</div>
   </header>
+  ${services && site.appointment_url ? `<div class="public-appointment">${appointmentButton(site.appointment_url)}</div>` : ''}
   ${categories.length > 1 ? `<nav class="public-categories" aria-label="Категории">${categories.map(([category], index) =>
     `<a href="#category-${index + 1}">${html(category)}</a>`).join('')}</nav>` : ''}
   ${categories.length ? categories.map(([category, entries], index) => `<section class="public-category" id="category-${index + 1}">
@@ -872,7 +928,7 @@ function landing(model) {
   }
 }
 
-function bookingDialog({ site, query }) {
+function bookingDialog({ site, query, bookingTelegramAvailable }) {
   const preview = new URLSearchParams(query).has('preview');
   const today = new Intl.DateTimeFormat('en-CA', {
     year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Europe/Minsk',
@@ -887,15 +943,21 @@ function bookingDialog({ site, query }) {
     <label>Имя<input name="guest_name" maxlength="80" autocomplete="given-name" required></label>
     <label>Телефон<input name="phone" type="tel" maxlength="32" autocomplete="tel" required></label>
     <label>Комментарий (по желанию)<textarea name="comment" rows="2" maxlength="500"></textarea></label>
-    <small>${preview ? 'Предпросмотр формы' : 'Заведение получит ваши контакты и свяжется с вами для подтверждения.'}</small>
+    <small>${preview ? 'Предпросмотр формы' : 'Заведение получит ваши контакты для подтверждения.'}</small>
     <p class="form-error" role="alert"></p>
     <button class="public-button main-action" type="submit" ${preview ? 'disabled' : ''}>Отправить заявку</button>
-  </form><p role="status" data-booking-result tabindex="-1" hidden>Заявка отправлена. Дождитесь связи с заведением.</p>`, 'booking-dialog');
+  </form><p role="status" data-booking-result tabindex="-1" hidden>Заявка отправлена. Дождитесь подтверждения заведения.</p>
+  ${bookingTelegramAvailable ? `<div class="booking-telegram" data-booking-telegram hidden>
+    <a class="public-button" target="_blank" rel="noopener noreferrer"><span>${svg('telegram')}Получать уведомления в Telegram</span></a>
+    <p>Откройте бота и нажмите «Запустить».</p>
+  </div>` : ''}`, 'booking-dialog');
   const form = modal.querySelector('#guestBookingForm');
   const submit = form.querySelector('button[type="submit"]');
   const error = form.querySelector('.form-error');
   const result = modal.querySelector('[data-booking-result]');
+  const telegram = modal.querySelector('[data-booking-telegram]');
   let id;
+  let telegramCode;
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (preview || submit.disabled) return;
@@ -903,11 +965,18 @@ function bookingDialog({ site, query }) {
     error.textContent = '';
     try {
       id ??= crypto.randomUUID();
+      if (telegram) telegramCode ??= crypto.randomUUID().replaceAll('-', '');
       const data = Object.fromEntries(new FormData(form));
-      await api('/api/bookings/' + site.slug + (query ?? ''), { method: 'POST', body: { ...data, id, party_size: Number(data.party_size) } });
+      const saved = await api('/api/bookings/' + site.slug + (query ?? ''), { method: 'POST', body: {
+        ...data, id, party_size: Number(data.party_size), telegram_code: telegramCode,
+      } });
       form.reset();
       form.hidden = true;
       result.hidden = false;
+      if (telegram && saved.telegram) {
+        telegram.querySelector('a').href = saved.telegram;
+        telegram.hidden = false;
+      }
       result.focus();
     } catch (failure) {
       error.textContent = failure.message;
@@ -1365,11 +1434,13 @@ async function load() {
     };
     const report = Object.hasOwn(reports, current.name) ? reports[current.name] : null;
     try {
-      const [result, extra] = await Promise.all([api(path, { signal }), report
-        ? api('/api/' + current.name + '?' + new URLSearchParams({ ...report, site: current.site }), { signal }) : null]);
+      const [result, extra, notifications] = await Promise.all([api(path, { signal }), report
+        ? api('/api/' + current.name + '?' + new URLSearchParams({ ...report, site: current.site,
+          ...(current.record && { id: current.record }) }), { signal }) : null,
+        current.tab === 'guest' && state.user.role === 'owner' ? api(path + '/notifications', { signal }).catch(() => null) : null]);
       if (signal.aborted) return;
       state.user = result.user;
-      if (current.name === 'detail') state.details = result;
+      if (current.name === 'detail') state.details = { ...result, notifications };
       else state.data = { ...result, report: extra };
     } catch (error) {
       if (signal.aborted) return;
@@ -1580,6 +1651,34 @@ async function onClick(event) {
     await load();
     return;
   }
+  if (action === 'telegram-connect' || action === 'telegram-disconnect' || action === 'telegram-refresh') {
+    const slug = state.details.site.slug;
+    const path = '/api/sites/' + slug + '/notifications';
+    trigger.disabled = true;
+    try {
+      if (action === 'telegram-connect') {
+        const { telegram } = await api(path, { method: 'POST' });
+        const message = trigger.closest('.telegram-settings').querySelector('[data-telegram-connect]');
+        message.querySelector('a').href = telegram;
+        message.hidden = false;
+        message.querySelector('a').focus();
+      } else {
+        if (action === 'telegram-disconnect') {
+          await api(path, { method: 'DELETE' });
+          toast('Служебный чат отключён');
+        }
+        if (route().slug === slug && route().tab === 'guest') {
+          await load();
+          app.querySelector('.telegram-settings')?.setAttribute('open', '');
+        }
+      }
+    } catch (error) {
+      toast(error.message, 'close');
+    } finally {
+      trigger.disabled = false;
+    }
+    return;
+  }
   if (action === 'feedback-next' || action === 'feedback-previous') {
     state.feedbackQuery.page = Math.max(1, state.feedbackQuery.page + (action === 'feedback-next' ? 1 : -1));
     await load();
@@ -1711,7 +1810,7 @@ async function onSubmit(event) {
     await load();
     return;
   }
-  if (!['siteForm', 'itemForm', 'adminForm', 'removeForm', 'tipsForm', 'menuLinkForm', 'menuImportForm', 'themeForm', 'guestLayoutForm', 'reviewSettingsForm', 'bookingSettingsForm'].includes(form.id)) return;
+  if (!['siteForm', 'itemForm', 'adminForm', 'removeForm', 'tipsForm', 'menuLinkForm', 'menuImportForm', 'themeForm', 'guestLayoutForm', 'reviewSettingsForm', 'bookingSettingsForm', 'telegramSettingsForm'].includes(form.id)) return;
   event.preventDefault();
   const submit = form.querySelector('button[type="submit"], button:not([type])');
   const error = form.querySelector('.form-error');
@@ -1738,6 +1837,15 @@ async function onSubmit(event) {
         show_booking: form.elements.show_booking.checked, previous_show_booking: data.previous_show_booking === '1',
       } });
       toast('Настройки бронирования сохранены');
+    }
+    if (form.id === 'telegramSettingsForm') {
+      await api(base + '/notifications', { method: 'PUT', body: { guest_enabled: form.elements.guest_enabled.checked } });
+      toast('Настройки уведомлений сохранены');
+      if (route().slug === slug && route().tab === 'guest') {
+        await load();
+        app.querySelector('.telegram-settings')?.setAttribute('open', '');
+      }
+      return;
     }
     if (form.id === 'themeForm') {
       await api(base + '/theme', { method: 'PUT', body: data });
@@ -1831,6 +1939,9 @@ async function start() {
     const googleError = Object.hasOwn(googleMessages, googleCode) ? googleMessages[googleCode] : '';
     const telegramError = Object.hasOwn(telegramMessages, telegramCode) ? telegramMessages[telegramCode] : '';
     if (!user || googleError || telegramError) {
+      if (/^\/admin\/(bookings|feedback)$/.test(location.pathname) && query.has('id')) {
+        try { sessionStorage.setItem('tap-notification-return', location.pathname + location.search); } catch { /* storage disabled */ }
+      }
       notice('Панель управления', 'Войдите с данными, указанными владельцем.',
         loginOptions(settings, googleError || telegramError) + '<a class="notice-about" href="/about">О проекте «Тап.»</a>');
       bindPasswordLogin();
@@ -1841,6 +1952,13 @@ async function start() {
       notice('Панель ожидает настройки', 'Для запуска рабочего пространства нужно указать email владельца.');
       return;
     }
+    try {
+      const destination = sessionStorage.getItem('tap-notification-return');
+      sessionStorage.removeItem('tap-notification-return');
+      if (location.pathname === '/admin' && /^\/admin\/(bookings|feedback)\?/.test(destination || '')) {
+        history.replaceState({}, '', destination);
+      }
+    } catch { /* storage disabled */ }
     state.user = user;
     state.passwordAvailable = settings.passwordAvailable;
     document.addEventListener('click', onClick);

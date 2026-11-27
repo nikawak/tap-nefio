@@ -9,7 +9,7 @@ if (!source || process.argv.length !== 3) {
 const folder = resolve(source);
 const { tables } = JSON.parse(readFileSync(join(folder, 'database.json'), 'utf8'));
 const tableNames = ['sites', 'items', 'site_admins', 'events', 'site_feedback', 'site_tip_settings', 'tip_opens', 'tip_payments'];
-for (const table of ['admin_profiles', 'site_bookings']) {
+for (const table of ['admin_profiles', 'site_bookings', 'site_notifications', 'telegram_notifications']) {
   if (tables?.[table] !== undefined) tableNames.push(table);
 }
 if (!tableNames.every((table) => Array.isArray(tables?.[table]))) throw new Error('The snapshot is missing a table.');

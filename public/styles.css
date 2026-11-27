@@ -217,6 +217,7 @@ td strong { font-weight: 600; }
 .tabs a:focus-visible { outline-offset: -3px; }
 .feedback-inbox, .bookings { display: grid; gap: 12px; }
 .feedback-inbox > .page-heading, .bookings > .page-heading { margin-bottom: 0; }
+.telegram-settings > .form-stack + .form-stack { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
 .feedback-filters { padding: 16px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); align-items: end; }
 .feedback-card, .booking-card { display: grid; gap: 8px; padding: clamp(16px, 3.5vw, 24px); }
 .feedback-card header { display: flex; align-items: center; justify-content: space-between; }
@@ -590,6 +591,9 @@ button.public-button { width: 100%; text-align: left; }
 .guest-info dt { display: flex; align-items: center; gap: 8px; font-size: .875rem; font-weight: 600; }
 .guest-info dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .guest-info code { font: inherit; font-weight: 600; }
+.guest-contacts, .guest-contact-links { display: grid; gap: 8px; }
+.guest-contact-links { grid-template-columns: repeat(auto-fit, minmax(min(100%, 196px), 1fr)); }
+.public-appointment { margin-bottom: 16px; }
 .guest-wifi > summary { list-style: none; }
 .guest-wifi > summary::-webkit-details-marker { display: none; }
 .guest-wifi[open] > summary > svg { transform: rotate(180deg); }
@@ -643,6 +647,8 @@ button.public-button { width: 100%; text-align: left; }
 :is(.feedback-dialog, .booking-dialog) .form-stack :is(input:not(.sr-only),textarea) { background: var(--venue-white); color: var(--venue-dark); border-color: var(--venue-muted); }
 :is(.feedback-dialog, .booking-dialog) .form-error { color: var(--venue-dark); }
 .booking-dialog form[hidden] { display: none; }
+.booking-telegram { margin-top: 12px; }
+.booking-telegram p { margin-top: 8px; font-size: .875rem; color: var(--venue-muted); }
 .feedback-stars { display: flex; justify-content: center; gap: 4px; padding: 0; border: 0; margin: 0; min-width: 0; }
 .feedback-stars label { position: relative; cursor: pointer; min-width: 0; }
 .feedback-stars label span { display: grid; place-items: center; width: clamp(36px, 12vw, 48px); height: 48px; border-radius: var(--venue-control); color: var(--venue-muted); }
