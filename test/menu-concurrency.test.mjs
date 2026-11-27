@@ -242,7 +242,7 @@ test('guest blocks can be reordered by assigned administrators, and the rating r
   assert.deepEqual(guestMenu.model.reviewProviders, []);
   assert.match(guestMenu.markup, /data-menu-item=/);
   assert.doesNotMatch(guestMenu.markup, /public-actions|data-open-feedback|public-social/);
-  assert.deepEqual([...guestMenu.markup.matchAll(/href="([^"]+)"/g)].map(([, url]) => url).filter((url) => !url.startsWith('#')),
+  assert.deepEqual([...guestMenu.markup.matchAll(/<a\b[^>]*\bhref="([^"]+)"/g)].map(([, url]) => url).filter((url) => !url.startsWith('#')),
     ['/moka-coffee?nfc=moka-demo', '/about']);
   assert.match(guestMenu.markup, /aria-label="Категории"/);
   assert.equal((await saveGuest({ maps_url: '' }, 7)).status, 200);
@@ -250,6 +250,51 @@ test('guest blocks can be reordered by assigned administrators, and the rating r
   assert.deepEqual((await page()).model.reviewProviders, ['yandex', 'google']);
   assert.equal((await saveGuest({ guest_order: ['maps', ...guest_order] }, 8)).status, 200);
   assert.deepEqual((await menu('manager')).site.guest_order, guest_order);
+});
+
+test('assigned administrators can publish and hide a guest offer with optional details', async (t) => {
+  const { menu, request } = fixture(t);
+  const initial = (await menu('manager')).site;
+  const offer = { show_offer: true, offer_title: 'Второй капучино в подарок до 12:00' };
+  const save = (body, version, path = sitePath) => request(path + '/guest/offer', { method: 'PUT', role: 'manager', version, body });
+  const guest = async (suffix = '') => {
+    const markup = await (await request('/moka-coffee' + suffix)).text();
+    return JSON.parse(markup.match(/id="page-data">([^<]*)<\/script>/)[1]).site;
+  };
+  assert.equal(initial.show_offer, 0);
+  assert.equal(initial.guest_order[0], 'offer');
+  assert.equal((await guest()).offer_title, undefined);
+  assert.equal((await save(offer, initial.guest_version, '/api/sites/basilico')).status, 404);
+  assert.equal((await save({ ...offer, offer_title: ' ' }, initial.guest_version)).status, 400);
+  assert.equal((await save(offer, initial.guest_version)).status, 200);
+  assert.equal((await guest()).offer_description, '');
+  assert.equal((await guest('/menu')).offer_title, undefined);
+
+  const description = 'В будни до 12:00.\nПокажите экран бариста. <Условия>';
+  assert.equal((await save({ ...offer, offer_description: description }, initial.guest_version)).status, 409);
+  assert.equal((await save({ ...offer, offer_description: description }, initial.guest_version + 1)).status, 200);
+  assert.equal((await guest()).offer_description, description);
+
+  let openOffer;
+  const dialog = { addEventListener() {}, setAttribute() {}, showModal() { this.open = true; } };
+  const app = { querySelector: (selector) => selector === '[data-open-offer]' ? {
+    addEventListener: (_type, listener) => { openOffer = listener; },
+  } : null };
+  const elements = { '#app': app, '#modal': dialog, '#page-data': { textContent: '{}' } };
+  const { guestOffer, landing } = runInNewContext(read('public/app.js').replace(/\bstart\(\);\s*$/, '') + '\n({guestOffer, landing});', {
+    document: { querySelector: (selector) => elements[selector], body: { classList: { add() {} } } },
+  });
+  assert.match(guestOffer({ offer_title: offer.offer_title }), /^<div class="public-button guest-offer"/);
+  landing({ site: { ...await guest(), offer_title: '<Подарок>' } });
+  assert.match(app.innerHTML, /data-open-offer.*#gift.*&lt;Подарок&gt;.*Условия/);
+  openOffer();
+  assert.equal(dialog.open, true);
+  assert.match(dialog.innerHTML, /В будни до 12:00\.\nПокажите экран бариста\. &lt;Условия&gt;/);
+
+  assert.equal((await save({ ...offer, show_offer: false, offer_description: description }, initial.guest_version + 2)).status, 200);
+  assert.equal((await guest()).offer_title, undefined);
+  assert.equal((await guest()).offer_description, undefined);
+  assert.equal((await menu('manager')).site.offer_description, description);
 });
 
 test('the production demo migration fills coffe1 without overwriting existing content or other venues', async (t) => {

@@ -13,42 +13,7 @@ const state = { data: null, user: null, days: 7, showAccount: false, mobileNav: 
   bookingsQuery: { status: '', page: 1 } };
 let activeLoad;
 const page = JSON.parse(document.querySelector('#page-data').textContent);
-const icons = {
-  nfc: '<path d="M4 11a13 13 0 0 1 16 0M7 14a8 8 0 0 1 10 0m-7 3a3.3 3.3 0 0 1 4 0"/><circle cx="12" cy="20" r="1" fill="currentColor" stroke="none"/>',
-  home: '<rect x="3" y="3" width="7" height="7" rx="1.4"/><rect x="14" y="3" width="7" height="7" rx="1.4"/><rect x="3" y="14" width="7" height="7" rx="1.4"/><rect x="14" y="14" width="7" height="7" rx="1.4"/>',
-  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18Z"/>',
-  bars: '<rect x="3.5" y="11" width="3.8" height="8.5" rx="1"/><rect x="10.1" y="7" width="3.8" height="12.5" rx="1"/><rect x="16.7" y="3.5" width="3.8" height="16" rx="1"/>',
-  book: '<path d="M12 6v15M3.5 4.5h5A3.5 3.5 0 0 1 12 8v13a4.5 4.5 0 0 0-3.5-2h-5zm17 0h-5A3.5 3.5 0 0 0 12 8v13a4.5 4.5 0 0 1 3.5-2h5z"/>',
-  wallet: '<path d="M20 8V6a2 2 0 0 0-2-2H6a3 3 0 0 0 0 6h14a1 1 0 0 1 1 1v7a2 2 0 0 1-2 2H6a3 3 0 0 1-3-3V7m18 6h-5a2 2 0 0 0 0 4h5"/>',
-  star: '<path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9Z"/>',
-  plus: '<path d="M12 5v14M5 12h14"/>',
-  menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
-  grip: '<path stroke-width="3" stroke-linecap="round" d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"/>',
-  chevron: '<path d="m7 10 5 5 5-5"/>',
-  calendar: '<rect x="3.5" y="5.5" width="17" height="15" rx="2"/><path d="M7.5 3.5v4M16.5 3.5v4M3.5 10h17"/>',
-  external: '<path d="M13 4h7v7m0-7-8 8m5 1v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h5"/>',
-  copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
-  settings: '<circle cx="12" cy="12" r="3"/><path d="M9 4.6 10 2h4l1 2.6 2 .9 2.8-.5 2 3.5-1.8 2.2v2.6l1.8 2.2-2 3.5-2.8-.5-2 .9L14 22h-4l-1-2.6-2-.9-2.8.5-2-3.5L4 13.3v-2.6L2.2 8.5l2-3.5 2.8.5z"/>',
-  users: '<circle cx="9" cy="8" r="3"/><path d="M3 19v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2m2-14a3 3 0 0 1 0 6m4 8v-2a4 4 0 0 0-3-3.9"/>',
-  pencil: '<path d="m15 5 4 4M4 20l4-.8L20 7l-3-3L4.8 16z"/>',
-  trash: '<path d="M4 6h16M9 6V4h6v2m3 0-1 14H7L6 6m4 4v6m4-6v6"/>',
-  close: '<path d="m6 6 12 12M18 6 6 18"/>',
-  check: '<path d="m5 12 4 4L19 6"/>',
-  coffee: '<path d="M5 9h11v5a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4zm11 1h2a2 2 0 1 1 0 4h-2M3 21h16M8 3v3m4-3v3"/>',
-  scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="m8 8 12 12M8 16 20 4"/>',
-  leaf: '<path d="M20 4c-7 0-13 3-13 9a5 5 0 0 0 5 5c6 0 9-6 8-14ZM4 21c2-5 5-7 9-10"/>',
-  palette: '<path d="M12 3a9 9 0 0 0 0 18h1.5a2 2 0 0 0 1.5-3.3 1.6 1.6 0 0 1 1.2-2.7H18a3 3 0 0 0 3-3 9 9 0 0 0-9-9Z"/><path d="M7.5 10h.01M10 6.8h.01M14 6.8h.01M17 10h.01" stroke-width="2.5"/>',
-  vk: '<path fill="currentColor" stroke="none" d="M6.79 7.3H4.05c.13 6.24 3.25 9.99 8.72 9.99h.31v-3.57c2.01.2 3.53 1.67 4.14 3.57h2.84c-.78-2.84-2.83-4.41-4.11-5.01 1.28-.74 3.08-2.54 3.51-4.98h-2.58c-.56 1.98-2.22 3.78-3.8 3.95V7.3H10.5v6.92c-1.6-.4-3.62-2.34-3.71-6.92Z"/>',
-  telegram: '<path d="m3 11 17-7-3 16-6-5-3 3v-5zM8 13l7-5"/>',
-  instagram: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17" cy="7" r="1" fill="currentColor" stroke="none"/>',
-  map: '<path d="M19 10c0 5-7 10.5-7 10.5S5 15 5 10a7 7 0 0 1 14 0Z"/><circle cx="12" cy="10" r="2"/>',
-  phone: '<path d="M8 3H5a2 2 0 0 0-2 2c0 8.8 7.2 16 16 16a2 2 0 0 0 2-2v-3l-5-2-2 2a12 12 0 0 1-6-6l2-2-2-5Z"/>',
-  link: '<path d="M10 13a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1.5 1.5m2.5 5.5a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1.5-1.5"/>',
-  search: '<circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4 4"/>',
-  shield: '<path d="M12 22s7.5-3.6 7.5-10V5L12 2 4.5 5v7C4.5 18.4 12 22 12 22Z"/><path d="m9 12 2 2 4-4"/>',
-  logout: '<path d="M11 5H5v14h6m-1-7h10m-4-4 4 4-4 4"/>',
-};
-const svg = (name, size = 18) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || ''}</svg>`;
+const svg = (name, size = 18) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="/assets/icons.svg#${name}"/></svg>`;
 const html = (value = '') => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 const nf = new Intl.NumberFormat('ru-RU');
 const money = (value, currency) => new Intl.NumberFormat('ru-RU', { style: 'currency', currency }).format(value / 100);
@@ -61,6 +26,7 @@ const reviewLabels = { yandex: 'Яндекс', google: 'Google' };
 const bookingStatuses = { pending: 'Новая', confirmed: 'Подтверждена', declined: 'Отклонена', cancelled: 'Отменена' };
 const bookingActions = { pending: [['confirmed', 'Подтвердить'], ['declined', 'Отклонить']], confirmed: [['cancelled', 'Отменить бронь']] };
 const guestBlockLabels = {
+  offer: 'Подарок или акция',
   hours: 'Время работы', wifi: 'Гостевой Wi-Fi', menu: 'Меню', services: 'Услуги', booking: 'Забронировать столик', feedback: 'Оценить заведение',
   contacts: 'Контакты и маршрут', appointment: 'Записаться', website: 'Официальный сайт', tips: 'Чаевые',
   telegram: 'Telegram', instagram: 'Instagram', vk: 'ВКонтакте',
@@ -79,7 +45,6 @@ const tipLinks = {
   'bepaid-link': 'Платёжная ссылка bePaid',
 };
 const tipLabels = { ...tipLinks, bepaid: 'Оплата картой через bePaid' };
-const tipIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 20.5 4.6 13C.5 8.6 6.4 2.4 10.8 6.9l1.2 1.2 1.2-1.2C17.6 2.4 23.5 8.6 19.4 13Z" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const themes = {
   light: 'Светлая', dark: 'Тёмная', coffee: 'Кофе', slate: 'Сланец', garden: 'Базилик',
   indigo: 'Индиго', lavender: 'Лаванда', peach: 'Персик', sand: 'Песок', walnut: 'Орех',
@@ -524,6 +489,19 @@ function siteForm(site = {}) {
   <button class="button primary" type="submit">${isNew ? 'Создать сайт' : 'Сохранить изменения'}</button></div></form>`;
 }
 
+function offerSettings(site) {
+  return `<section class="panel form-panel"><h2 class="offer-settings-title">${svg('gift', 20)}Подарок или акция</h2>
+    <form id="offerSettingsForm" class="form-stack" data-version="${site.guest_version}">
+      <label class="check-label"><input type="checkbox" name="show_offer" ${site.show_offer ? 'checked' : ''}>Показывать на гостевой странице</label>
+      <label>Название<input name="offer_title" maxlength="100" placeholder="Второй капучино в подарок до 12:00" value="${html(site.offer_title)}"></label>
+      <label><span>Описание и условия <span class="muted">(необязательно)</span></span>
+        <textarea name="offer_description" maxlength="1200" rows="4">${html(site.offer_description)}</textarea>
+      </label>
+      <p class="form-error" role="alert"></p>
+      <div class="form-footer"><button type="submit" class="button primary">Сохранить</button></div>
+    </form></section>`;
+}
+
 function guestLayoutForm(site) {
   const order = site.guest_order;
   return `<section class="panel form-panel"><h2>Для гостей</h2>
@@ -824,7 +802,7 @@ function detailContent(current, bundle) {
     ${button('Скопировать', 'copy', 'copy-nfc', 'secondary')}</div>
     <nav class="tabs" aria-label="Редактирование мини-сайта">${tabs.map(([key, label, icon, href]) => `<a data-nav href="${href}" class="${active === key ? 'selected' : ''}" ${active === key ? 'aria-current="page"' : ''}>${svg(icon, 18)}${label}</a>`).join('')}</nav>
     ${Object.hasOwn(catalogEditor, active) ? itemsContent(site, items, catalogEditor[active]) : ''}
-    ${active === 'guest' ? `<div class="guest-settings">${bookingSettings(site)}${reviewSettings(site)}${owner ? telegramSettings(notifications) : ''}${guestLayoutForm(site)}</div>` : ''}
+    ${active === 'guest' ? `<div class="guest-settings">${offerSettings(site)}${bookingSettings(site)}${reviewSettings(site)}${owner ? telegramSettings(notifications) : ''}${guestLayoutForm(site)}</div>` : ''}
     ${active === 'settings' ? `<section class="panel form-panel"><h2>Настройки страницы</h2>${siteForm(site)}</section>` : ''}
     ${active === 'theme' ? `<section class="panel form-panel"><h2>Оформление страницы</h2><form id="themeForm" class="form-stack">
       <input type="hidden" name="previous_theme" value="${html(site.theme)}">${themePicker(site.theme)}
@@ -837,9 +815,18 @@ function appointmentButton(url) {
   return `<a class="public-button main-action" href="${html(url)}" target="_blank" rel="noopener noreferrer"><span>${svg('calendar')}Записаться</span></a>`;
 }
 
+function guestOffer(site) {
+  if (!site.offer_title) return '';
+  const content = `<span class="guest-offer-label"><span class="guest-offer-mark">${svg('gift', 22)}</span><strong>${html(site.offer_title)}</strong></span>`;
+  return site.offer_description
+    ? `<button class="public-button guest-offer" type="button" data-open-offer aria-haspopup="dialog">${content}<span class="guest-offer-link">Условия</span></button>`
+    : `<div class="public-button guest-offer">${content}</div>`;
+}
+
 function guestActions({ site, reviewProviders, tips }, base, query) {
   const blocks = {
-    hours: site.show_hours !== 0 && site.opening_hours && `<dl class="guest-info"><dt>${svg('calendar')} Время работы</dt><dd>${html(site.opening_hours)}</dd></dl>`,
+    offer: guestOffer(site),
+    hours: site.show_hours !== 0 && site.opening_hours && `<dl class="guest-info"><dt>${svg('clock')} Время работы</dt><dd>${html(site.opening_hours)}</dd></dl>`,
     wifi: site.show_wifi !== 0 && (site.wifi_name || site.wifi_password) && `<details class="guest-wifi">
       <summary class="public-button"><span>${svg('nfc')}Wi-Fi</span>${svg('chevron')}</summary>
       <div class="guest-wifi-info"><dl class="guest-info">
@@ -860,7 +847,7 @@ function guestActions({ site, reviewProviders, tips }, base, query) {
       </div>` : ''}</div>`,
     feedback: reviewProviders?.length && `<button type="button" class="public-button" data-open-feedback aria-haspopup="dialog"><span>${svg('star')}Оценить заведение</span></button>`,
     website: site.show_website && site.website_url && `<a class="public-button" href="${html(site.website_url)}" target="_blank" rel="noopener noreferrer"><span>${svg('globe')}Официальный сайт</span></a>`,
-    tips: tips?.length && `<a class="public-button" target="_top" href="${base}/tips${query}"><span>${tipIcon}Оставить чаевые</span></a>`,
+    tips: tips?.length && `<a class="public-button" target="_top" href="${base}/tips${query}"><span>${svg('heart')}Оставить чаевые</span></a>`,
   };
   for (const key of ['telegram', 'instagram', 'vk']) {
     const name = guestBlockLabels[key];
@@ -912,6 +899,9 @@ function landing(model) {
     </div>
     <footer class="public-footer"><a href="/about">${svg('nfc', 18)}<span>Nefio</span></a></footer>
   </main>`;
+  app.querySelector('[data-open-offer]')?.addEventListener('click', () => {
+    showModal(site.offer_title, `<p class="guest-offer-description">${html(site.offer_description)}</p>`, 'guest-offer-dialog');
+  });
   app.querySelector('[data-open-feedback]')?.addEventListener('click', () => feedbackDialog(model));
   app.querySelector('[data-open-booking]')?.addEventListener('click', () => bookingDialog(model));
   app.querySelector('[data-copy-wifi]')?.addEventListener('click', async () => {
@@ -1810,7 +1800,7 @@ async function onSubmit(event) {
     await load();
     return;
   }
-  if (!['siteForm', 'itemForm', 'adminForm', 'removeForm', 'tipsForm', 'menuLinkForm', 'menuImportForm', 'themeForm', 'guestLayoutForm', 'reviewSettingsForm', 'bookingSettingsForm', 'telegramSettingsForm'].includes(form.id)) return;
+  if (!['siteForm', 'itemForm', 'adminForm', 'removeForm', 'tipsForm', 'menuLinkForm', 'menuImportForm', 'themeForm', 'guestLayoutForm', 'offerSettingsForm', 'reviewSettingsForm', 'bookingSettingsForm', 'telegramSettingsForm'].includes(form.id)) return;
   event.preventDefault();
   const submit = form.querySelector('button[type="submit"], button:not([type])');
   const error = form.querySelector('.form-error');
@@ -1826,6 +1816,11 @@ async function onSubmit(event) {
       data.guest_order = [...form.querySelectorAll('[data-guest-block]')].map((row) => row.dataset.guestBlock);
       await api(base + '/guest', { method: 'PUT', version: form.dataset.version, body: data });
       toast('Гостевая страница обновлена');
+    }
+    if (form.id === 'offerSettingsForm') {
+      data.show_offer = form.elements.show_offer.checked;
+      await api(base + '/guest/offer', { method: 'PUT', version: form.dataset.version, body: data });
+      toast('Подарок или акция сохранены');
     }
     if (form.id === 'reviewSettingsForm') {
       data.show_reviews = form.elements.show_reviews.checked;

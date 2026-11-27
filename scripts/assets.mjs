@@ -5,6 +5,7 @@ const types = {
   'index.html': 'text/html; charset=utf-8',
   'about.html': 'text/html; charset=utf-8',
   'app.js': 'text/javascript; charset=utf-8',
+  'icons.svg': 'image/svg+xml',
   'styles.css': 'text/css; charset=utf-8',
   'menu-template.json': 'application/json; charset=utf-8',
   'service-template.json': 'application/json; charset=utf-8',
@@ -19,6 +20,10 @@ export function readAssets() {
     const file = readFileSync(new URL('../public/' + name, import.meta.url));
     return [name, type.startsWith('image/') ? { type, base64: file.toString('base64') } : { type, text: file.toString('utf8') }];
   }));
+  const iconsVersion = createHash('sha256').update(assets['icons.svg'].base64, 'base64').digest('hex').slice(0, 12);
+  for (const page of ['app.js', 'about.html']) {
+    assets[page].text = assets[page].text.replaceAll('/assets/icons.svg#', `/assets/icons.svg?v=${iconsVersion}#`);
+  }
   for (const name of ['app.js', 'styles.css']) {
     const version = createHash('sha256').update(assets[name].text).digest('hex').slice(0, 12);
     const path = '/assets/' + name;

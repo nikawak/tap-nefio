@@ -78,7 +78,7 @@ test('existing salon positions and public menu links are carried into services',
   const { site, items } = await (await request('/api/sites/forma-studio?catalog=services')).json();
   assert.equal(site.show_menu, 0);
   assert.equal(site.show_services, 1);
-  assert.equal(site.guest_order[0], 'services');
+  assert.equal(site.guest_order.find((block) => block !== 'offer'), 'services');
   assert.deepEqual(items.map(({ name }) => name), ['Стрижка и укладка']);
   assert.equal((await request('/forma-studio/menu?nfc=forma-demo')).headers.get('Location'), '/forma-studio/services?nfc=forma-demo');
   assert.equal((await model(await request('/forma-studio/services?nfc=forma-demo'))).query, '?nfc=forma-demo');

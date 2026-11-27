@@ -5,7 +5,7 @@ import {
 const actionColumns = { maps: 'maps_url', telegram: 'telegram_url', instagram: 'instagram_url', vk: 'vk_url' };
 const contactColumns = Object.values(actionColumns);
 const reviewColumns = { yandex: 'yandex_review_url', google: 'google_review_url' };
-const guestBlocks = ['hours', 'wifi', 'menu', 'services', 'appointment', 'booking', 'contacts', 'feedback', 'website', 'tips', 'telegram', 'instagram', 'vk'];
+const guestBlocks = ['offer', 'hours', 'wifi', 'menu', 'services', 'appointment', 'booking', 'contacts', 'feedback', 'website', 'tips', 'telegram', 'instagram', 'vk'];
 const catalogs = {
   menu: { kind: 'menu', url: 'menu_url', visible: 'show_menu', version: 'menu_order_version', linkLabel: 'внешнее меню' },
   services: { kind: 'services', url: 'services_url', visible: 'show_services', version: 'services_order_version', linkLabel: 'внешний список услуг' },
@@ -649,8 +649,9 @@ function itemWithPhoto({ photo_key: key, ...item }, preview = false) {
 
 function siteWithPhotos({ logo_key, cover_key, menu_order_version, services_order_version, legacy_services, hidden_links, ...site }, preview = false) {
   if (site.guest_order !== undefined) {
-    const order = JSON.parse(site.guest_order);
-    site.guest_order = [...new Set([...order.filter((key) => guestBlocks.includes(key)), ...guestBlocks])];
+    const order = JSON.parse(site.guest_order).filter((key) => guestBlocks.includes(key));
+    if (!order.includes('offer')) order.unshift('offer');
+    site.guest_order = [...new Set([...order, ...guestBlocks])];
   }
   return { ...site, hidden_links: JSON.parse(hidden_links ?? '[]'), logo_photo_url: photoUrl(sitePhotoPrefix, logo_key, preview),
     cover_photo_url: photoUrl(sitePhotoPrefix, cover_key, preview) };
@@ -1099,7 +1100,7 @@ async function saveGuestLayout(request, db, site) {
   let order = Array.isArray(data.guest_order) ? data.guest_order.filter((key) => key !== 'maps') : data.guest_order;
   if (Array.isArray(order) && order.length < guestBlocks.length) {
     const missing = guestBlocks.filter((key) => !order.includes(key));
-    if (missing.every((key) => ['booking', 'services', 'contacts', 'appointment'].includes(key))) {
+    if (missing.every((key) => ['offer', 'booking', 'services', 'contacts', 'appointment'].includes(key))) {
       // Merge newer buttons into the order sent by older clients.
       siteWithPhotos(site).guest_order.forEach((key, index) => {
         if (missing.includes(key)) order.splice(index, 0, key);
@@ -1127,6 +1128,20 @@ async function saveGuestLayout(request, db, site) {
     maps_url=COALESCE(?, maps_url), show_maps=COALESCE(?, show_maps),
     guest_version=guest_version+1 WHERE id=? AND guest_version=? RETURNING id`,
     order === undefined ? null : JSON.stringify(order), enabled, ...links, maps, maps === null ? null : Number(!!maps), site.id, version).first()) {
+    fail(409, 'Настройки гостевой страницы уже изменились. Обновите страницу и повторите действие.');
+  }
+}
+
+async function saveGuestOffer(request, db, site) {
+  const version = expectedVersion(request);
+  const data = await body(request);
+  const enabled = optionalFlag(data, 'show_offer');
+  const title = field(data, 'offer_title', 100);
+  const description = field(data, 'offer_description', 1200);
+  if (enabled === null) fail(400, 'Укажите, показывать ли подарок или акцию.');
+  if (enabled && !title) fail(400, 'Введите название подарка или акции.');
+  if (!await q(db, `UPDATE sites SET show_offer=?, offer_title=?, offer_description=?, guest_version=guest_version+1
+    WHERE id=? AND guest_version=? RETURNING id`, enabled, title, description, site.id, version).first()) {
     fail(409, 'Настройки гостевой страницы уже изменились. Обновите страницу и повторите действие.');
   }
 }
@@ -1487,6 +1502,10 @@ async function api(request, url, env) {
     await saveGuestLayout(request, db, site);
     return json({ ok: true });
   }
+  if (section === 'guest' && key === 'offer' && method === 'PUT') {
+    await saveGuestOffer(request, db, site);
+    return json({ ok: true });
+  }
   if (section === 'website' && !key && method === 'PUT') {
     if (user.role !== 'owner') fail(403, 'Настройки сайта доступны владельцу.');
     await saveWebsiteButton(request, db, site);
@@ -1787,7 +1806,8 @@ async function publicPage(request, url, env, assets, ctx) {
     if (!previewAllowed && request.method === 'GET') await trackAnalytics(ctx, count(db, site, 'menu', source));
     return redirect(external);
   }
-  const { nfc_key, website_url, hidden_links, guest_version, maps_url, show_maps, yandex_review_url, google_review_url, ...publicSite } = siteWithPhotos(site, !!previewAllowed);
+  const { nfc_key, website_url, hidden_links, guest_version, maps_url, show_maps, yandex_review_url, google_review_url,
+    show_offer, offer_title, offer_description, ...publicSite } = siteWithPhotos(site, !!previewAllowed);
   for (const key of hidden_links) delete publicSite[key];
   if (site.show_hours === 0) delete publicSite.opening_hours;
   if (site.show_wifi === 0) {
@@ -1795,6 +1815,10 @@ async function publicPage(request, url, env, assets, ctx) {
     delete publicSite.wifi_password;
   }
   if (site.show_website) publicSite.website_url = website_url;
+  if (!catalog && show_offer && offer_title) {
+    publicSite.offer_title = offer_title;
+    publicSite.offer_description = offer_description;
+  }
   const items = catalog
     ? await all(db, 'SELECT id, name, category, description, price, photo_key FROM items WHERE site_id=? AND catalog=? AND available=1 ORDER BY ' + itemOrder,
       site.id, catalog.kind)

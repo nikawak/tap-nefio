@@ -20,6 +20,7 @@
     { "idx": 15, "version": "6", "when": 1795219215000, "tag": "0015_table_bookings", "breakpoints": true },
     { "idx": 16, "version": "6", "when": 1795219216000, "tag": "0016_service_catalog", "breakpoints": true },
     { "idx": 17, "version": "6", "when": 1795219217000, "tag": "0017_barbershop_demo", "breakpoints": true },
-    { "idx": 18, "version": "6", "when": 1795219218000, "tag": "0018_guest_contacts_and_notifications", "breakpoints": true }
+    { "idx": 18, "version": "6", "when": 1795219218000, "tag": "0018_guest_contacts_and_notifications", "breakpoints": true },
+    { "idx": 19, "version": "6", "when": 1795219219000, "tag": "0019_guest_offer", "breakpoints": true }
   ]
 }
