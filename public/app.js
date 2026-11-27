@@ -35,6 +35,7 @@ const icons = {
   close: '<path d="m6 6 12 12M18 6 6 18"/>',
   check: '<path d="m5 12 4 4L19 6"/>',
   coffee: '<path d="M5 9h11v5a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4zm11 1h2a2 2 0 1 1 0 4h-2M3 21h16M8 3v3m4-3v3"/>',
+  scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="m8 8 12 12M8 16 20 4"/>',
   leaf: '<path d="M20 4c-7 0-13 3-13 9a5 5 0 0 0 5 5c6 0 9-6 8-14ZM4 21c2-5 5-7 9-10"/>',
   palette: '<path d="M12 3a9 9 0 0 0 0 18h1.5a2 2 0 0 0 1.5-3.3 1.6 1.6 0 0 1 1.2-2.7H18a3 3 0 0 0 3-3 9 9 0 0 0-9-9Z"/><path d="M7.5 10h.01M10 6.8h.01M14 6.8h.01M17 10h.01" stroke-width="2.5"/>',
   vk: '<path fill="currentColor" stroke="none" d="M6.79 7.3H4.05c.13 6.24 3.25 9.99 8.72 9.99h.31v-3.57c2.01.2 3.53 1.67 4.14 3.57h2.84c-.78-2.84-2.83-4.41-4.11-5.01 1.28-.74 3.08-2.54 3.51-4.98h-2.58c-.56 1.98-2.22 3.78-3.8 3.95V7.3H10.5v6.92c-1.6-.4-3.62-2.34-3.71-6.92Z"/>',
@@ -292,7 +293,7 @@ function tipsAnalytics({ counts, paid }) {
 }
 
 function siteIcon(site, large = false) {
-  const icon = { coffee: 'coffee', garden: 'leaf' }[site.theme] || 'globe';
+  const icon = site.type === 'Барбершоп' ? 'scissors' : { coffee: 'coffee', garden: 'leaf' }[site.theme] || 'globe';
   const logoPhoto = site.logo_photo_url || site.logo_url;
   return logoPhoto ? `<img class="site-icon" src="${html(logoPhoto)}" alt="">` : `<span class="site-icon">${svg(icon, large ? 28 : 18)}</span>`;
 }

@@ -547,7 +547,7 @@ body:has(#modal[open], .theme-catalogue[open]) { overflow: hidden; }
   border-radius: var(--venue-radius);
   background: var(--venue-white);
 }
-.landing-menu { max-width: 680px; }
+.landing-menu { --catalog-gutter: 32px; max-width: 680px; overflow: visible; overflow: clip; }
 .public-draft-banner { padding: 8px 12px; background: #f8eed7; color: #5d420f; font-size: .875rem; text-align: center; font-weight: 600; }
 .public-hero { position: relative; isolation: isolate; overflow: hidden; border-bottom: 1px solid var(--venue-line); }
 .public-cover { width: 100%; aspect-ratio: 2 / 1; height: auto; object-fit: cover; object-position: 50% 62%; background: var(--venue-hero); }
@@ -606,10 +606,10 @@ button.public-button { width: 100%; text-align: left; }
 .public-menu-heading h2 { color: var(--venue-dark); font-family: var(--venue-heading); font-size: clamp(1.75rem, 5vw, 2.25rem); font-weight: 500; line-height: 1.12; }
 .public-menu-heading a, .tip-home { color: var(--venue-accent); font-size: .875rem; font-weight: 500; text-decoration: underline; text-underline-offset: .2em; }
 .public-menu-heading > a { justify-self: start; }
-.public-categories { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
-.public-categories a { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; border: 1px solid var(--venue-line); border-radius: var(--venue-control); color: var(--venue-dark); font-size: .875rem; overflow-wrap: anywhere; }
+.public-categories { position: sticky; inset-block-start: 0; z-index: 1; display: flex; gap: 8px; margin: 0 calc(-1 * var(--catalog-gutter)) 20px; padding: 8px var(--catalog-gutter); overflow-x: auto; scrollbar-width: thin; background: var(--venue-white); border-bottom: 1px solid var(--venue-line); }
+.public-categories a { display: inline-flex; flex: 0 0 auto; align-items: center; min-height: 44px; padding: 8px 12px; border: 1px solid var(--venue-line); border-radius: var(--venue-control); color: var(--venue-dark); font-size: .875rem; white-space: nowrap; }
 .public-categories a:hover { background: var(--venue-bg); }
-.public-category { scroll-margin-top: 16px; }
+.public-category { scroll-margin-top: 80px; }
 .public-category + .public-category { margin-top: 28px; }
 .public-category h3 { margin-bottom: 8px; color: var(--venue-dark); font-size: 1.125rem; font-weight: 600; overflow-wrap: anywhere; }
 .public-category ul { padding: 0; margin: 0; list-style: none; border: 1px solid var(--venue-line); border-radius: var(--venue-control); }
@@ -677,6 +677,7 @@ button.public-button { width: 100%; text-align: left; }
   .landing .public-footer { margin-top: auto; }
   .public-cover { aspect-ratio: 16 / 10; }
   .public-hero-inner, .public-content { padding: 20px 16px; }
+  .landing-menu { --catalog-gutter: 16px; }
   .public-hero .site-icon { width: 48px; height: 48px; }
   .tip-page { padding-block: 24px; }
   .tip-page-card { padding: 16px; }

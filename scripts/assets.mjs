@@ -11,6 +11,7 @@ const types = {
   'moka.jpg': 'image/jpeg',
   'coffe1/cover.jpg': 'image/jpeg',
   'coffe1/logo.png': 'image/png',
+  'barbershop/cover.jpg': 'image/jpeg',
 };
 
 export function readAssets() {

@@ -83,3 +83,33 @@ test('existing salon positions and public menu links are carried into services',
   assert.equal((await model(await request('/forma-studio/services?nfc=forma-demo'))).query, '?nfc=forma-demo');
   assert.equal((await (await request('/api/sites/forma-studio')).json()).items.length, 0);
 });
+
+test('the barbershop demo ships with a published service catalog next to the existing coffee demo', async (t) => {
+  const db = openDatabase(':memory:');
+  t.after(() => db.close());
+  const request = client(db, 'owner');
+  assert.equal((await request('/barbershop')).status, 404);
+  db.exec(`INSERT INTO sites (id, slug, name, type, theme, status, nfc_key, created_at)
+    VALUES ('coffee-demo', 'coffe1', 'Кофе 01', 'Кофейня', 'coffee', 'live', 'coffee-demo', '2026-01-01')`);
+  const migration = read('drizzle/0017_barbershop_demo.sql');
+  db.exec(migration);
+
+  const home = await model(await request('/barbershop'));
+  assert.equal(home.site.name, 'Контур');
+  assert.equal(home.site.show_services, 1);
+  assert.equal(home.site.show_hours, 1);
+  assert.equal(home.site.show_menu, 0);
+  const services = await model(await request('/barbershop/services'));
+  assert.equal(services.view, 'services');
+  assert.equal(services.items.length, 12);
+  assert.deepEqual([...new Set(services.items.map(({ category }) => category))], ['Стрижки', 'Борода', 'Комплексы', 'Уход']);
+  assert.equal(services.site.currency, 'BYN');
+  assert.equal((await request(new URL(home.site.cover_url).pathname)).headers.get('Content-Type'), 'image/jpeg');
+  assert.equal((await model(await request('/coffe1'))).site.name, 'Кофе 01');
+
+  db.prepare('UPDATE items SET price=? WHERE id=?').run(5200, services.items[0].id);
+  db.exec(migration);
+  const updated = await model(await request('/barbershop/services'));
+  assert.equal(updated.items.length, 12);
+  assert.equal(updated.items[0].price, 5200);
+});
