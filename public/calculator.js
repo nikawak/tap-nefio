@@ -4,8 +4,8 @@ const get = (id) => document.getElementById(id);
 const form = get('order-form');
 const { quantity, design, includeSite } = form.elements;
 const minimum = pricing.cardTiers[0].min;
-const minus = get('quantity-minus');
-const plus = get('quantity-plus');
+const range = get('quantity-range');
+const maximumLabel = get('quantity-maximum');
 const error = get('quantity-error');
 const hint = get('custom-hint');
 const total = get('order-total');
@@ -27,6 +27,8 @@ const cardWord = (quantity) => ({ one: 'карту', few: 'карты', many: '�
 
 quantity.min = minimum;
 quantity.value = minimum;
+range.min = minimum;
+get('quantity-minimum').textContent = counts.format(minimum);
 error.textContent = `Введите целое число карт от ${minimum}.`;
 get('standard-price').textContent = designOptionPrice(pricing.standardDesign);
 get('custom-terms').textContent = `Один макет на заказ. От ${pricing.freeCustomDesignFrom} карт индивидуальный дизайн бесплатный.`;
@@ -43,7 +45,11 @@ function update() {
   const customDesign = design.value === 'custom';
   const order = calculateOrder(count, { customDesign, includeSite: includeSite.checked });
 
-  minus.disabled = !order || count <= minimum;
+  if (order) {
+    if (count > Number(range.max)) range.max = count;
+    range.value = count;
+    maximumLabel.textContent = counts.format(range.max);
+  }
   quantity.setAttribute('aria-invalid', String(!order));
   error.hidden = !!order;
   customPrice.textContent = designOptionPrice(order && count >= pricing.freeCustomDesignFrom ? 0 : pricing.customDesign);
@@ -63,16 +69,10 @@ function update() {
   });
 }
 
-minus.addEventListener('click', () => {
-  quantity.stepDown();
+form.addEventListener('input', (event) => {
+  if (event.target === range) quantity.value = range.value;
   update();
 });
-plus.addEventListener('click', () => {
-  if (Number.isSafeInteger(quantity.valueAsNumber) && quantity.valueAsNumber >= minimum) quantity.stepUp();
-  else quantity.value = minimum;
-  update();
-});
-form.addEventListener('input', update);
 form.addEventListener('submit', (event) => event.preventDefault());
 window.addEventListener('pageshow', update);
 update();

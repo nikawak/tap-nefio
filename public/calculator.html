@@ -30,12 +30,12 @@
     <div class="calculator-grid" hidden>
       <form class="calculator-form" id="order-form">
         <div class="calculator-field">
-          <label class="calculator-label" for="quantity">Количество NFC-карт</label>
           <div class="calculator-quantity">
-            <button id="quantity-minus" type="button" aria-label="Уменьшить количество карт" disabled><svg width="20" height="20" aria-hidden="true"><use href="/assets/icons.svg#minus"/></svg></button>
+            <label class="calculator-label" for="quantity">Количество NFC-карт</label>
             <input id="quantity" name="quantity" type="number" min="1" step="1" inputmode="numeric" value="1" required aria-describedby="quantity-error">
-            <button id="quantity-plus" type="button" aria-label="Увеличить количество карт"><svg width="20" height="20" aria-hidden="true"><use href="/assets/icons.svg#plus"/></svg></button>
           </div>
+          <input id="quantity-range" type="range" min="1" max="100" value="1" step="1" aria-label="Количество NFC-карт">
+          <div class="calculator-range-labels" aria-hidden="true"><span id="quantity-minimum">1</span><span id="quantity-maximum">100</span></div>
           <p id="quantity-error" class="calculator-error" role="alert" hidden>Введите целое число карт от 1.</p>
         </div>
 

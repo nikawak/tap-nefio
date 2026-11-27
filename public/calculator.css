@@ -9,17 +9,14 @@
 .calculator-field { display: grid; min-width: 0; margin: 0; padding: 0; border: 0; gap: .55rem; }
 .calculator-label { padding: 0; font-size: 1.125rem; font-weight: 700; }
 legend.calculator-label { margin-bottom: .55rem; }
-.calculator-quantity {
-  display: grid; grid-template-columns: 3rem minmax(0, 5.25rem) 3rem; width: fit-content;
-  border: 1px solid var(--about-line); border-radius: .7rem; background: var(--about-canvas);
+.calculator-quantity { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 6rem); align-items: center; gap: .65rem; }
+.calculator-quantity input {
+  width: 100%; min-width: 0; min-height: 2.75rem; padding-inline: .4rem; border: 1px solid var(--about-line); border-radius: .65rem;
+  background: var(--about-canvas); color: inherit; font: inherit; font-weight: 700; font-variant-numeric: tabular-nums; text-align: center; appearance: textfield;
 }
-.calculator-quantity > * { min-height: 3rem; border: 0; background: transparent; color: inherit; font: inherit; font-variant-numeric: tabular-nums; }
-.calculator-quantity button { border-radius: .6rem; cursor: pointer; }
-.calculator-quantity button:hover:not(:disabled) { background: #e1ecd9; }
-.calculator-quantity button:disabled { color: var(--about-muted); opacity: .45; cursor: default; }
-.calculator-quantity input { width: 100%; min-width: 0; border-inline: 1px solid var(--about-line); text-align: center; font-weight: 700; appearance: textfield; }
 .calculator-quantity input::-webkit-inner-spin-button, .calculator-quantity input::-webkit-outer-spin-button { appearance: none; margin: 0; }
-.calculator-quantity > :focus-visible { outline-offset: -2px; }
+.calculator-field input[type=range] { width: 100%; min-height: 2.75rem; margin: 0; accent-color: var(--about-green); cursor: ew-resize; }
+.calculator-range-labels { display: flex; justify-content: space-between; color: var(--about-muted); font-size: .875rem; margin-top: -.55rem; }
 .calculator-quantity input[aria-invalid=true], .calculator-error { color: #9a323a; }
 .calculator-option {
   display: grid; grid-template-columns: 1.125rem minmax(0, 1fr) auto; align-items: center;

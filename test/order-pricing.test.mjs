@@ -48,6 +48,8 @@ test('the public calculator and its versioned assets work without a database or 
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /<form[^>]+id="order-form"/);
+  assert.match(html, /<input[^>]+id="quantity-range"[^>]+type="range"/);
+  assert.doesNotMatch(html, /id="quantity-(?:minus|plus)"/);
   const head = await request('/calculator/', 'HEAD');
   assert.equal(head.status, 200);
   assert.equal(await head.text(), '');
@@ -69,10 +71,11 @@ test('calculator controls update the total, active tier and design hint immediat
     setAttribute(name, value) { this.attributes.set(name, value); }
     removeAttribute(name) { this.attributes.delete(name); }
     get valueAsNumber() { return this.value === '' ? NaN : Number(this.value); }
-    stepUp() { this.value = this.valueAsNumber + 1; }
-    stepDown() { this.value = this.valueAsNumber - 1; }
-    input() { this.dispatchEvent(new Event('input')); }
-    click() { this.dispatchEvent(new Event('click')); }
+    input(target = this) {
+      const event = new Event('input');
+      Object.defineProperty(event, 'target', { value: target });
+      this.dispatchEvent(event);
+    }
   }
   const fields = new Map();
   const get = (id) => {
@@ -81,6 +84,8 @@ test('calculator controls update the total, active tier and design hint immediat
   };
   const form = get('order-form');
   const quantity = get('quantity');
+  const range = get('quantity-range');
+  range.max = '100';
   const design = { value: 'standard' };
   const includeSite = { checked: false };
   form.elements = { quantity, design, includeSite };
@@ -92,7 +97,7 @@ test('calculator controls update the total, active tier and design hint immediat
 
   const total = () => get('order-total').value.replace(/\s/g, ' ');
   assert.equal(total(), '35 BYN');
-  assert.equal(get('quantity-minus').disabled, true);
+  assert.equal(Number(range.value), 1);
   assert.equal(get('custom-hint').hidden, true);
 
   quantity.value = '5';
@@ -100,19 +105,30 @@ test('calculator controls update the total, active tier and design hint immediat
   includeSite.checked = true;
   form.input();
   assert.equal(total(), '200 BYN');
+  assert.equal(Number(range.value), 5);
   assert.match(get('custom-hint').textContent, /ещё 1 карту/);
   assert.equal(tierTable.rows[2].attributes.get('aria-current'), 'true');
-  get('quantity-plus').click();
+  range.value = '6';
+  form.input(range);
   assert.equal(total(), '198 BYN');
+  assert.equal(quantity.valueAsNumber, 6);
   assert.equal(get('custom-hint').hidden, true);
-  get('quantity-minus').click();
+  range.value = '5';
+  form.input(range);
   assert.equal(total(), '200 BYN');
 
   includeSite.checked = false;
   form.input();
   assert.equal(total(), '170 BYN');
+  quantity.value = '150';
+  form.input();
+  assert.equal(Number(range.value), 150);
+  assert.equal(Number(range.max), 150);
+  assert.equal(get('quantity-maximum').textContent, '150');
+  assert.equal(total().replace(/ /g, ''), '3000BYN');
   quantity.value = '';
   form.input();
   assert.equal(get('quantity-error').hidden, false);
+  assert.equal(Number(range.value), 150);
   assert.equal(total(), '—');
 });
