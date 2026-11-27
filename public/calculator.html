@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f5ef">
+  <meta name="description" content="Рассчитайте стоимость NFC-карт NEFIO с учётом тиража, дизайна и подключения сайта.">
+  <title>Калькулятор заказа NFC-карт — NEFIO</title>
+  <link rel="stylesheet" href="/assets/about.css">
+  <link rel="stylesheet" href="/assets/calculator.css">
+  <script type="module" src="/assets/calculator.js"></script>
+</head>
+<body>
+  <a class="about-skip" href="#main">К содержимому</a>
+  <header class="about-header about-wrap">
+    <a class="about-brand" href="/about" aria-label="NEFIO. О проекте">
+      <span class="about-brand-icon"><svg width="24" height="24" aria-hidden="true"><use href="/assets/icons.svg#nfc"/></svg></span>
+      тап<span class="about-brand-dot">.</span>
+    </a>
+    <nav class="about-nav" aria-label="По странице"><a href="#card-prices">Цены за карту</a></nav>
+    <a class="about-button about-button-outline" href="/about">О проекте</a>
+  </header>
+
+  <main id="main" class="about-wrap calculator">
+    <header class="calculator-heading">
+      <h1>Калькулятор заказа</h1>
+      <p>Рассчитайте стоимость NFC-карт, дизайна и подключения сайта.</p>
+    </header>
+    <noscript><p>Включите JavaScript, чтобы рассчитать заказ и увидеть тарифы.</p></noscript>
+    <div class="calculator-grid" hidden>
+      <form class="calculator-form" id="order-form">
+        <div class="calculator-field">
+          <label class="calculator-label" for="quantity">Количество NFC-карт</label>
+          <div class="calculator-quantity">
+            <button id="quantity-minus" type="button" aria-label="Уменьшить количество карт" disabled><svg width="20" height="20" aria-hidden="true"><use href="/assets/icons.svg#minus"/></svg></button>
+            <input id="quantity" name="quantity" type="number" min="1" step="1" inputmode="numeric" value="1" required aria-describedby="quantity-error">
+            <button id="quantity-plus" type="button" aria-label="Увеличить количество карт"><svg width="20" height="20" aria-hidden="true"><use href="/assets/icons.svg#plus"/></svg></button>
+          </div>
+          <p id="quantity-error" class="calculator-error" role="alert" hidden>Введите целое число карт от 1.</p>
+        </div>
+
+        <fieldset class="calculator-field">
+          <legend class="calculator-label">Дизайн</legend>
+          <label class="calculator-option">
+            <input type="radio" name="design" value="standard" checked>
+            <span>Стандартный дизайн</span><span id="standard-price" class="calculator-option-price"></span>
+          </label>
+          <label class="calculator-option">
+            <input type="radio" name="design" value="custom" aria-describedby="custom-terms custom-hint">
+            <span>Индивидуальный дизайн</span><span id="custom-price" class="calculator-option-price"></span>
+          </label>
+          <p id="custom-terms" class="calculator-note"></p>
+          <p id="custom-hint" class="calculator-hint" aria-live="polite" hidden></p>
+        </fieldset>
+
+        <label class="calculator-option calculator-connection">
+          <input type="checkbox" name="includeSite">
+          <span>Подключение сайта <small>Единоразово</small></span>
+          <span id="connection-price" class="calculator-option-price"></span>
+        </label>
+      </form>
+
+      <section class="calculator-summary" aria-labelledby="summary-title">
+        <h2 id="summary-title">Стоимость заказа</h2>
+        <dl class="calculator-breakdown">
+          <div><dt id="cards-label">NFC-карты</dt><dd id="cards-price">—</dd></div>
+          <div><dt id="design-label">Дизайн</dt><dd id="design-price">—</dd></div>
+          <div><dt>Подключение сайта</dt><dd id="site-price">—</dd></div>
+        </dl>
+        <div class="calculator-total"><label for="order-total">Итого</label>
+          <output id="order-total" form="order-form" for="quantity" aria-live="polite">—</output>
+        </div>
+        <p class="calculator-payment">Без подписки и абонентской платы</p>
+      </section>
+    </div>
+
+    <section class="calculator-tariffs" id="card-prices" aria-labelledby="tariffs-title" hidden>
+      <h2 id="tariffs-title">Цены за одну NFC-карту</h2>
+      <p>Цена по тиражу применяется ко всем картам в заказе.</p>
+      <table>
+        <thead><tr><th scope="col">Количество карт</th><th scope="col">Цена за карту</th></tr></thead>
+        <tbody id="card-tiers"></tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

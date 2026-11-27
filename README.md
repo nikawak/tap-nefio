@@ -4,6 +4,8 @@
 
 [Панель управления](https://nefio.site/admin/sites) · [Демо «Кофе 01»](https://nefio.site/coffe1) · [Демо барбершопа «Контур»](https://nefio.site/barbershop) · [О проекте](https://nefio.site/about)
 
+[Калькулятор заказа NFC-карт](https://nefio.site/calculator) рассчитывает тираж, дизайн и подключение сайта. Таблица и расчёт используют тарифы из [public/order-pricing.js](public/order-pricing.js).
+
 ## Панель управления
 
 | Роль | Возможности |

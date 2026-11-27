@@ -18,7 +18,7 @@ const themes = [
   'sage', 'mint', 'pine', 'ocean', 'sky', 'steel', 'graphite', 'berry', 'plum', 'rose',
   'coral', 'honey', 'lemon', 'clay', 'copper',
 ];
-const reserved = new Set(['about', 'admin', 'api', 'assets', 'auth', 'callback', 'signin-with-chatgpt', 'signout-with-chatgpt', 'favicon.ico']);
+const reserved = new Set(['about', 'calculator', 'admin', 'api', 'assets', 'auth', 'callback', 'signin-with-chatgpt', 'signout-with-chatgpt', 'favicon.ico']);
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const nfcPath = /^\/(?:([a-z0-9-]+)\/)?nfc=([A-Za-z0-9_-]{1,128})\/?$/;
 const photoPrefix = '/assets/menu-photos/';
@@ -1869,6 +1869,7 @@ export function createApp(assets) {
         }
         if (path === '/favicon.ico') return new Response(null, { status: 204 });
         if (path === '/about' || path === '/about/') return htmlResponse(request.method === 'HEAD' ? null : assets['about.html'].text);
+        if (path === '/calculator' || path === '/calculator/') return htmlResponse(request.method === 'HEAD' ? null : assets['calculator.html'].text);
         const legacySection = path.match(/^\/admin\/sites\/([a-z0-9-]+)\/(bookings|feedback|analytics|tips)\/?$/);
         if (legacySection) return redirect('/admin/' + legacySection[2] + '?site=' + legacySection[1]);
         if ((path === '/' && !url.searchParams.has('nfc')) || path === '/admin' || path.startsWith('/admin/')) return shell(assets);

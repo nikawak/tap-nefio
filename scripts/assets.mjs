@@ -6,6 +6,10 @@ const types = {
   'about.html': 'text/html; charset=utf-8',
   'about.css': 'text/css; charset=utf-8',
   'about-nfc.jpg': 'image/jpeg',
+  'calculator.html': 'text/html; charset=utf-8',
+  'calculator.css': 'text/css; charset=utf-8',
+  'calculator.js': 'text/javascript; charset=utf-8',
+  'order-pricing.js': 'text/javascript; charset=utf-8',
   'app.js': 'text/javascript; charset=utf-8',
   'icons.svg': 'image/svg+xml',
   'styles.css': 'text/css; charset=utf-8',
@@ -23,14 +27,16 @@ export function readAssets() {
     return [name, type.startsWith('image/') ? { type, base64: file.toString('base64') } : { type, text: file.toString('utf8') }];
   }));
   const iconsVersion = createHash('sha256').update(assets['icons.svg'].base64, 'base64').digest('hex').slice(0, 12);
-  for (const page of ['app.js', 'about.html']) {
+  for (const page of ['app.js', 'about.html', 'calculator.html']) {
     assets[page].text = assets[page].text.replaceAll('/assets/icons.svg#', `/assets/icons.svg?v=${iconsVersion}#`);
   }
-  for (const name of ['app.js', 'styles.css', 'about.css']) {
-    const version = createHash('sha256').update(assets[name].text).digest('hex').slice(0, 12);
+  const version = (name) => createHash('sha256').update(assets[name].text).digest('hex').slice(0, 12);
+  assets['calculator.js'].text = assets['calculator.js'].text.replace('./order-pricing.js', './order-pricing.js?v=' + version('order-pricing.js'));
+  for (const name of ['app.js', 'styles.css', 'about.css', 'calculator.css', 'calculator.js']) {
     const path = '/assets/' + name;
-    for (const page of ['index.html', 'about.html']) {
-      assets[page].text = assets[page].text.replace(path, path + '?v=' + version);
+    const versionedPath = path + '?v=' + version(name);
+    for (const page of ['index.html', 'about.html', 'calculator.html']) {
+      assets[page].text = assets[page].text.replace(path, versionedPath);
     }
   }
   return assets;
