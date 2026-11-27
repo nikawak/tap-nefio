@@ -1,7 +1,9 @@
 const actionColumns = { maps: 'maps_url', telegram: 'telegram_url', instagram: 'instagram_url', vk: 'vk_url' };
 const contactColumns = Object.values(actionColumns);
 const reviewColumns = { yandex: 'yandex_review_url', google: 'google_review_url' };
-const guestBlocks = ['hours', 'wifi', 'menu', 'feedback', 'website', 'tips', 'telegram', 'instagram', 'vk'];
+const guestBlocks = ['hours', 'wifi', 'menu', 'booking', 'feedback', 'website', 'tips', 'telegram', 'instagram', 'vk'];
+const bookingTransitions = { confirmed: 'pending', declined: 'pending', cancelled: 'confirmed' };
+const bookingClock = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Minsk', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const currencies = ['BYN', 'RUB', 'KZT', 'USD', 'EUR'];
 const themes = [
   'light', 'dark', 'coffee', 'slate', 'garden', 'indigo', 'lavender', 'peach', 'sand', 'walnut',
@@ -1056,7 +1058,12 @@ async function saveGuestLayout(request, db, site) {
   const version = expectedVersion(request);
   const data = await body(request);
   const enabled = optionalFlag(data, 'show_reviews');
-  const order = Array.isArray(data.guest_order) ? data.guest_order.filter((key) => key !== 'maps') : data.guest_order;
+  let order = Array.isArray(data.guest_order) ? data.guest_order.filter((key) => key !== 'maps') : data.guest_order;
+  if (Array.isArray(order) && order.length === guestBlocks.length - 1 && !order.includes('booking')) {
+    // Older clients can still save their order. Preserve the position of the new button.
+    const index = siteWithPhotos(site).guest_order.indexOf('booking');
+    order = [...order.slice(0, index), 'booking', ...order.slice(index)];
+  }
   if (order !== undefined && (!Array.isArray(order) || order.length !== guestBlocks.length ||
       new Set(order).size !== guestBlocks.length || order.some((key) => !guestBlocks.includes(key)))) {
     fail(400, 'Проверьте порядок элементов для гостей.');
@@ -1080,6 +1087,63 @@ async function saveGuestLayout(request, db, site) {
     order === undefined ? null : JSON.stringify(order), enabled, ...links, maps, maps === null ? null : Number(!!maps), site.id, version).first()) {
     fail(409, 'Настройки гостевой страницы уже изменились. Обновите страницу и повторите действие.');
   }
+}
+
+async function recordBooking(request, url, db, slug) {
+  if (request.headers.get('origin') !== url.origin || url.searchParams.has('preview')) {
+    fail(403, 'Откройте форму на опубликованной странице заведения.');
+  }
+  const data = await body(request, 8192);
+  if (typeof data.id !== 'string' || !uuidPattern.test(data.id)) fail(400, 'Откройте форму заново и повторите отправку.');
+  const date = field(data, 'visit_date', 10, true);
+  const time = field(data, 'visit_time', 5, true);
+  const day = new Date(date + 'T00:00:00Z');
+  const now = new Date();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(day.getTime()) || day.toISOString().slice(0, 10) !== date ||
+      !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) fail(400, 'Укажите корректную дату и время визита.');
+  const phone = field(data, 'phone', 32, true).replace(/[ ()-]/g, '');
+  if (!/^\+?\d{7,15}$/.test(phone)) fail(400, 'Укажите телефон для связи.');
+  if (!Number.isSafeInteger(data.party_size) || data.party_size < 1 || data.party_size > 99) {
+    fail(400, 'Укажите количество гостей от 1 до 99.');
+  }
+  const name = field(data, 'guest_name', 80, true);
+  const comment = field(data, 'comment', 500);
+  const upcoming = `${date} ${time}` > `${dayKey(now)} ${bookingClock.format(now)}`;
+  const saved = await q(db, `INSERT INTO site_bookings
+    (site_id, id, visit_date, visit_time, party_size, guest_name, phone, comment, created_at)
+    SELECT id, ?, ?, ?, ?, ?, ?, ?, ? FROM sites WHERE slug=? AND status='live' AND show_booking=1 AND ?=1
+    ON CONFLICT(site_id, id) DO NOTHING RETURNING id`,
+    data.id, date, time, data.party_size, name, phone, comment, now.toISOString(), slug, Number(upcoming)).first();
+  if (saved) return json({ ok: true }, 201);
+  const site = await findSite(db, slug);
+  if (site && await q(db, 'SELECT 1 FROM site_bookings WHERE site_id=? AND id=?', site.id, data.id).first()) return json({ ok: true });
+  if (site?.status !== 'live' || !site.show_booking) fail(404, 'Бронирование для этого заведения недоступно.');
+  fail(400, 'Выберите дату и время в будущем по Минску.');
+}
+
+async function bookingsInbox(db, params, siteId) {
+  const status = params.get('status');
+  const filtered = ['pending', ...Object.keys(bookingTransitions)].includes(status);
+  const requestedPage = Number(params.get('page'));
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 && requestedPage < 100000 ? requestedPage : 1;
+  const rows = await all(db, `SELECT id, visit_date, visit_time, party_size, guest_name, phone, comment, status, created_at
+    FROM site_bookings WHERE site_id=?${filtered ? ' AND status=?' : ''}
+    ORDER BY created_at DESC, id DESC LIMIT 25 OFFSET ?`, siteId, ...(filtered ? [status] : []), (page - 1) * 24);
+  return json({ bookings: rows.slice(0, 24), page, hasMore: rows.length > 24 });
+}
+
+async function updateBooking(request, db, siteId, id) {
+  if (!uuidPattern.test(id)) fail(404, 'Заявка не найдена.');
+  const { status } = await body(request, 1024);
+  if (typeof status !== 'string' || !Object.hasOwn(bookingTransitions, status)) fail(400, 'Выберите действие для заявки.');
+  const saved = await q(db, `UPDATE site_bookings SET status=? WHERE site_id=? AND id=? AND status=? RETURNING id`,
+    status, siteId, id, bookingTransitions[status]).first();
+  if (!saved) {
+    const current = await q(db, 'SELECT status FROM site_bookings WHERE site_id=? AND id=?', siteId, id).first();
+    if (!current) fail(404, 'Заявка не найдена.');
+    if (current.status !== status) fail(409, 'Статус заявки уже изменился.');
+  }
+  return json({ ok: true });
 }
 
 async function recordFeedback(request, url, db, slug) {
@@ -1206,6 +1270,8 @@ async function api(request, url, env) {
   const db = env.DB;
   const feedback = url.pathname.match(/^\/api\/feedback\/([a-z0-9-]+)$/);
   if (feedback && request.method === 'POST') return recordFeedback(request, url, db, feedback[1]);
+  const booking = url.pathname.match(/^\/api\/bookings\/([a-z0-9-]+)$/);
+  if (booking && request.method === 'POST') return recordBooking(request, url, db, booking[1]);
   const user = await actor(request, env);
   if (url.pathname === '/api/session' && request.method === 'GET') return json({
     user, ownerConfigured: !!env.OWNER_EMAIL || !!env.DEMO_MODE, googleAvailable: googleReady(env, url),
@@ -1234,7 +1300,7 @@ async function api(request, url, env) {
     if (user.role !== 'owner') fail(403, 'Создавать сайты может владелец.');
     return json({ site: await saveSite(request, env) }, 201);
   }
-  const route = url.pathname.match(/^\/api\/sites\/([a-z0-9-]+)(?:\/(items|admins|tips|website|feedback|theme|guest)(?:\/([^/]+))?)?$/);
+  const route = url.pathname.match(/^\/api\/sites\/([a-z0-9-]+)(?:\/(items|admins|tips|website|feedback|bookings|theme|guest)(?:\/([^/]+))?)?$/);
   if (!route) fail(404, 'Раздел не найден.');
   const [, slug, section, key] = route;
   const site = await allowedSite(db, user, slug);
@@ -1254,6 +1320,18 @@ async function api(request, url, env) {
   if (section === 'feedback' && key && method === 'PUT') {
     if (!uuidPattern.test(key) || !await q(db, `UPDATE site_feedback SET read_at=COALESCE(read_at, ?)
       WHERE site_id=? AND id=? RETURNING id`, new Date().toISOString(), site.id, key).first()) fail(404, 'Отзыв не найден.');
+    return json({ ok: true });
+  }
+  if (section === 'bookings' && !key && method === 'GET') return bookingsInbox(db, url.searchParams, site.id);
+  if (section === 'bookings' && key && method === 'PUT') return updateBooking(request, db, site.id, key);
+  if (section === 'bookings' && !key && method === 'PUT') {
+    const data = await body(request, 1024);
+    const enabled = optionalFlag(data, 'show_booking');
+    const previous = optionalFlag(data, 'previous_show_booking');
+    if (enabled === null || previous === null) fail(400, 'Укажите, включено ли бронирование.');
+    if (!await q(db, 'UPDATE sites SET show_booking=? WHERE id=? AND show_booking=? RETURNING id', enabled, site.id, previous).first()) {
+      fail(409, 'Настройки бронирования уже изменились. Обновите страницу.');
+    }
     return json({ ok: true });
   }
   if (section === 'tips' && !key && method === 'PUT') {

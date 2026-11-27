@@ -213,12 +213,16 @@ td strong { font-weight: 600; }
 .tabs a.selected { border-color: var(--brand); font-weight: 600; }
 .tabs a:focus-visible { outline-offset: -3px; }
 .feedback-badge { color: var(--brand-deep); font: .75rem/16px var(--mono); }
-.feedback-inbox { display: grid; gap: 12px; }
+.feedback-inbox, .bookings { display: grid; gap: 12px; }
 .feedback-settings { margin-bottom: 16px; }
 .feedback-inbox > .page-heading { margin-bottom: 0; }
 .feedback-filters { padding: 16px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); align-items: end; }
-.feedback-card { display: grid; gap: 8px; padding: clamp(16px, 3.5vw, 24px); }
+.feedback-card, .booking-card { display: grid; gap: 8px; padding: clamp(16px, 3.5vw, 24px); }
 .feedback-card header { display: flex; align-items: center; justify-content: space-between; }
+.booking-card header { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: baseline; justify-content: space-between; }
+.booking-card p { margin: 0; overflow-wrap: anywhere; }
+.booking-card small { color: var(--muted); }
+.booking-comment { white-space: pre-wrap; }
 .feedback-card > button { justify-self: start; }
 .feedback-score { display: inline-flex; align-items: center; gap: 8px; color: var(--brand-deep); font-weight: 600; font-variant-numeric: tabular-nums; }
 .feedback-comment { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1.12rem; line-height: 1.5; }
@@ -621,10 +625,11 @@ button.public-button { width: 100%; text-align: left; }
 .public-item-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: var(--venue-muted); }
 .public-item-meta strong { color: var(--venue-accent); font-size: 1.125rem; font-weight: 600; white-space: nowrap; }
 .public-item-detail p { white-space: pre-line; overflow-wrap: anywhere; }
-#modal.feedback-dialog { max-width: 536px; border-radius: var(--venue-radius); }
-.feedback-dialog .form-stack :is(label,small) { color: var(--venue-dark); }
-.feedback-dialog .form-stack :is(input:not(.sr-only),textarea) { background: var(--venue-white); color: var(--venue-dark); border-color: var(--venue-muted); }
-.feedback-dialog .form-error { color: var(--venue-dark); }
+#modal:is(.feedback-dialog, .booking-dialog) { max-width: 536px; border-radius: var(--venue-radius); }
+:is(.feedback-dialog, .booking-dialog) .form-stack :is(label,small) { color: var(--venue-dark); }
+:is(.feedback-dialog, .booking-dialog) .form-stack :is(input:not(.sr-only),textarea) { background: var(--venue-white); color: var(--venue-dark); border-color: var(--venue-muted); }
+:is(.feedback-dialog, .booking-dialog) .form-error { color: var(--venue-dark); }
+.booking-dialog form[hidden] { display: none; }
 .feedback-stars { display: flex; justify-content: center; gap: 4px; padding: 0; border: 0; margin: 0; min-width: 0; }
 .feedback-stars label { position: relative; cursor: pointer; min-width: 0; }
 .feedback-stars label span { display: grid; place-items: center; width: clamp(36px, 12vw, 48px); height: 48px; border-radius: var(--venue-control); color: var(--venue-muted); }

@@ -9,7 +9,8 @@ modal.addEventListener('close', () => {
   modal.querySelector('#passwordSettingsForm')?.reset();
 });
 const state = { data: null, user: null, days: 7, siteFilter: '', showAccount: false, mobileNav: false,
-  details: null, loadError: '', statsFailed: false, passwordAvailable: false, feedbackQuery: { status: '', rating: '', sort: 'recent', page: 1 } };
+  details: null, loadError: '', statsFailed: false, passwordAvailable: false, feedbackQuery: { status: '', rating: '', sort: 'recent', page: 1 },
+  bookingsQuery: { status: '', page: 1 } };
 let activeLoad;
 const page = JSON.parse(document.querySelector('#page-data').textContent);
 const icons = {
@@ -54,8 +55,10 @@ const actionInfo = {
   instagram: ['Instagram', 'instagram'], telegram: ['Telegram', 'telegram'], vk: ['ВКонтакте', 'vk'],
 };
 const reviewLabels = { yandex: 'Яндекс', google: 'Google' };
+const bookingStatuses = { pending: 'Новая', confirmed: 'Подтверждена', declined: 'Отклонена', cancelled: 'Отменена' };
+const bookingActions = { pending: [['confirmed', 'Подтвердить'], ['declined', 'Отклонить']], confirmed: [['cancelled', 'Отменить бронь']] };
 const guestBlockLabels = {
-  hours: 'Время работы', wifi: 'Гостевой Wi-Fi', menu: 'Меню', feedback: 'Оценить заведение',
+  hours: 'Время работы', wifi: 'Гостевой Wi-Fi', menu: 'Меню', booking: 'Забронировать столик', feedback: 'Оценить заведение',
   website: 'Официальный сайт', tips: 'Чаевые',
   telegram: 'Telegram', instagram: 'Instagram', vk: 'ВКонтакте',
 };
@@ -694,11 +697,50 @@ function feedbackContent(inbox, sites) {
   </section>`;
 }
 
+function bookingsContent(site, { bookings, page, hasMore }) {
+  const status = state.bookingsQuery.status;
+  const format = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Minsk' });
+  return `<section class="bookings">
+    <section class="panel form-panel"><h2>Бронирование столиков</h2>
+      <form id="bookingSettingsForm" class="form-stack">
+        <input type="hidden" name="previous_show_booking" value="${Number(!!site.show_booking)}">
+        <label class="check-label"><input type="checkbox" name="show_booking" ${site.show_booking ? 'checked' : ''}>Принимать заявки на бронирование</label>
+        <p class="muted">На опубликованной странице появится кнопка «Забронировать столик».</p>
+        <p class="form-error" role="alert"></p>
+        <div class="form-footer"><button type="submit" class="button primary">Сохранить</button></div>
+      </form>
+    </section>
+    <div class="section-heading detail-heading"><div><h2>Заявки</h2><p>Время визита указано по Минску. Свяжитесь с гостем, чтобы сообщить решение.</p></div>
+      ${button('Обновить', '', 'retry-load', 'secondary')}</div>
+    <form id="bookingsFilters" class="panel feedback-filters form-stack">
+      <label>Статус<select name="status"><option value="">Все заявки</option>
+        ${Object.entries(bookingStatuses).map(([key, label]) => `<option value="${key}" ${status === key ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
+      <button class="button secondary" type="submit">Показать</button>
+    </form>
+    ${bookings.length ? bookings.map((booking) => `<article class="panel booking-card">
+      <header><strong>${html(dateLabel(booking.visit_date, { day: 'numeric', month: 'long', year: 'numeric' }))} · ${html(booking.visit_time)}</strong>
+        <span>${bookingStatuses[booking.status]}</span></header>
+      <p>Гостей: ${nf.format(booking.party_size)} · ${html(booking.guest_name)}</p>
+      <p><a href="tel:${html(booking.phone)}">${html(booking.phone)}</a></p>
+      ${booking.comment ? `<p class="booking-comment">${html(booking.comment)}</p>` : ''}
+      <small>Получена ${html(format.format(new Date(booking.created_at)))}</small>
+      ${bookingActions[booking.status] ? `<div class="heading-actions">${bookingActions[booking.status].map(([next, label]) =>
+        `<button class="button ${next === 'confirmed' ? 'primary' : 'secondary'}" type="button" data-action="booking-status"
+          data-id="${html(booking.id)}" data-slug="${html(site.slug)}" data-status="${next}">${label}</button>`).join('')}</div>` : ''}
+    </article>`).join('') : '<div class="panel empty"><p>Заявок нет.</p></div>'}
+    ${page > 1 || hasMore ? `<div class="heading-actions feedback-pages">
+      ${page > 1 ? button('Назад', '', 'bookings-previous', 'secondary') : ''}
+      ${hasMore ? button('Дальше', '', 'bookings-next', 'secondary') : ''}
+    </div>` : ''}
+  </section>`;
+}
+
 function detailContent(current, bundle, analytics) {
-  const { site, items, admins, tips, unreadFeedback, inbox } = bundle;
+  const { site, items, admins, tips, unreadFeedback, inbox, bookingInbox } = bundle;
   const base = '/admin/sites/' + site.slug;
   const owner = state.user.role === 'owner';
-  const tabs = [['menu', 'Меню', 'book', base], ['feedback', 'Отзывы', 'star', base + '/feedback'], ['analytics', 'Статистика', 'bars', base + '/analytics'],
+  const tabs = [['menu', 'Меню', 'book', base], ['bookings', 'Бронирование', 'calendar', base + '/bookings'],
+    ['feedback', 'Отзывы', 'star', base + '/feedback'], ['analytics', 'Статистика', 'bars', base + '/analytics'],
     ['guest', 'Для гостей', 'globe', base + '/guest'],
     ...(owner ? [['settings', 'Настройки', 'settings', base + '/settings'], ['access', 'Доступ', 'users', base + '/access'], ['tips', 'Чаевые', 'star', base + '/tips']]
       : [['theme', 'Оформление', 'palette', base + '/theme']])];
@@ -711,6 +753,7 @@ function detailContent(current, bundle, analytics) {
     ${button('Скопировать', 'copy', 'copy-nfc', 'secondary')}</div>
     <nav class="tabs" aria-label="Разделы сайта">${tabs.map(([key, label, icon, href]) => `<a data-nav href="${href}" class="${active === key ? 'selected' : ''}" ${active === key ? 'aria-current="page"' : ''}>${svg(icon, 18)}${label}${key === 'feedback' && unreadFeedback ? `<span class="feedback-badge" aria-label="Непрочитанных отзывов: ${nf.format(unreadFeedback)}">${nf.format(unreadFeedback)}</span>` : ''}</a>`).join('')}</nav>
     ${active === 'menu' ? itemsContent(site, items) : ''}
+    ${active === 'bookings' && bookingInbox ? bookingsContent(site, bookingInbox) : ''}
     ${active === 'feedback' && inbox ? reviewSettings(site) + feedbackContent(inbox) : ''}
     ${active === 'guest' ? guestLayoutForm(site) : ''}
     ${active === 'settings' ? `<section class="panel form-panel"><h2>Настройки страницы</h2>${siteForm(site)}</section>` : ''}
@@ -738,6 +781,7 @@ function guestActions({ site, reviewProviders, tips }, base, query) {
       ${site.wifi_password ? '<button type="button" class="public-button" data-copy-wifi>Скопировать пароль</button>' : ''}
       <p>Откройте настройки Wi-Fi на телефоне и выберите гостевую сеть.</p></div></details>`,
     menu: site.show_menu && `<a class="public-button main-action" href="${base}/menu${query}" ${site.menu_url ? 'target="_top"' : ''}><span>${svg('book')}${label}</span></a>`,
+    booking: site.show_booking && `<button type="button" class="public-button" data-open-booking aria-haspopup="dialog"><span>${svg('calendar')}Забронировать столик</span></button>`,
     feedback: reviewProviders?.length && `<button type="button" class="public-button" data-open-feedback aria-haspopup="dialog"><span>${svg('star')}Оценить заведение</span></button>`,
     website: site.show_website && site.website_url && `<a class="public-button" href="${html(site.website_url)}" target="_blank" rel="noopener noreferrer"><span>${svg('globe')}Официальный сайт</span></a>`,
     tips: tips?.length && `<a class="public-button" target="_top" href="${base}/tips${query}"><span>${tipIcon}Оставить чаевые</span></a>`,
@@ -778,6 +822,7 @@ function landing(model) {
     <footer class="public-footer">${svg('nfc', 18)} Сделано в Тап.</footer>
   </main>`;
   app.querySelector('[data-open-feedback]')?.addEventListener('click', () => feedbackDialog(model));
+  app.querySelector('[data-open-booking]')?.addEventListener('click', () => bookingDialog(model));
   app.querySelector('[data-copy-wifi]')?.addEventListener('click', async () => {
     try { await copy(site.wifi_password); toast('Пароль скопирован'); }
     catch (error) { toast(error.message, 'close'); }
@@ -790,6 +835,51 @@ function landing(model) {
       if (item) publicItemDialog(item, site.currency);
     });
   }
+}
+
+function bookingDialog({ site, query }) {
+  const preview = new URLSearchParams(query).has('preview');
+  const today = new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Europe/Minsk',
+  }).format(new Date());
+  showModal('Забронировать столик', `<form id="guestBookingForm" class="form-stack" method="post">
+    <p>Дата и время визита по Минску</p>
+    <div class="form-grid">
+      <label>Дата<input name="visit_date" type="date" min="${today}" required></label>
+      <label>Время<input name="visit_time" type="time" required></label>
+    </div>
+    <label>Количество гостей<input name="party_size" type="number" inputmode="numeric" min="1" max="99" value="2" required></label>
+    <label>Имя<input name="guest_name" maxlength="80" autocomplete="given-name" required></label>
+    <label>Телефон<input name="phone" type="tel" maxlength="32" autocomplete="tel" required></label>
+    <label>Комментарий (по желанию)<textarea name="comment" rows="2" maxlength="500"></textarea></label>
+    <small>${preview ? 'Предпросмотр формы' : 'Заведение получит ваши контакты и свяжется с вами для подтверждения.'}</small>
+    <p class="form-error" role="alert"></p>
+    <button class="public-button main-action" type="submit" ${preview ? 'disabled' : ''}>Отправить заявку</button>
+  </form><p role="status" data-booking-result tabindex="-1" hidden>Заявка отправлена. Дождитесь связи с заведением.</p>`, 'booking-dialog');
+  const form = modal.querySelector('#guestBookingForm');
+  const submit = form.querySelector('button[type="submit"]');
+  const error = form.querySelector('.form-error');
+  const result = modal.querySelector('[data-booking-result]');
+  let id;
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (preview || submit.disabled) return;
+    submit.disabled = true;
+    error.textContent = '';
+    try {
+      id ??= crypto.randomUUID();
+      const data = Object.fromEntries(new FormData(form));
+      await api('/api/bookings/' + site.slug + (query ?? ''), { method: 'POST', body: { ...data, id, party_size: Number(data.party_size) } });
+      form.reset();
+      form.hidden = true;
+      result.hidden = false;
+      result.focus();
+    } catch (failure) {
+      error.textContent = failure.message;
+    } finally {
+      submit.disabled = false;
+    }
+  });
 }
 
 function feedbackDialog({ site, query, reviewProviders }) {
@@ -1237,13 +1327,14 @@ async function load() {
     const path = current.name === 'detail' ? '/api/sites/' + current.slug : '/api/sites';
     const inboxPath = current.name === 'feedback' ? '/api/feedback' : current.tab === 'feedback' ? path + '/feedback' : '';
     try {
-      const [result, inbox] = await Promise.all([api(path, { signal }),
-        inboxPath ? api(inboxPath + '?' + new URLSearchParams(state.feedbackQuery), { signal }) : null]);
+      const [result, inbox, bookingInbox] = await Promise.all([api(path, { signal }),
+        inboxPath ? api(inboxPath + '?' + new URLSearchParams(state.feedbackQuery), { signal }) : null,
+        current.tab === 'bookings' ? api(path + '/bookings?' + new URLSearchParams(state.bookingsQuery), { signal }) : null]);
       if (signal.aborted) return;
       state.user = result.user;
       if (current.name === 'sites') state.data = result;
       else if (current.name === 'feedback') state.data = { ...result, inbox };
-      else state.details = { ...result, inbox };
+      else state.details = { ...result, inbox, bookingInbox };
     } catch (error) {
       if (signal.aborted) return;
       state.loadError = error.message;
@@ -1289,7 +1380,10 @@ function render() {
 }
 
 function navigate(href) {
-  if (href !== location.pathname) state.feedbackQuery.page = 1;
+  if (href !== location.pathname) {
+    state.feedbackQuery.page = 1;
+    state.bookingsQuery = { status: '', page: 1 };
+  }
   history.pushState({}, '', href);
   state.mobileNav = false;
   state.showAccount = false;
@@ -1444,6 +1538,28 @@ async function onClick(event) {
     await load();
     return;
   }
+  if (action === 'bookings-next' || action === 'bookings-previous') {
+    state.bookingsQuery.page = Math.max(1, state.bookingsQuery.page + (action === 'bookings-next' ? 1 : -1));
+    await load();
+    return;
+  }
+  if (action === 'booking-status') {
+    const { slug, id, status } = trigger.dataset;
+    const buttons = [...trigger.parentElement.querySelectorAll('button')];
+    buttons.forEach((button) => { button.disabled = true; });
+    try {
+      await api('/api/sites/' + slug + '/bookings/' + id, { method: 'PUT', body: { status } });
+      toast('Статус заявки обновлён');
+    } catch (failure) {
+      toast(failure.message, 'close');
+      if (failure.status !== 409) return;
+    } finally {
+      buttons.forEach((button) => { button.disabled = false; });
+    }
+    const current = route();
+    if (current.slug === slug && current.tab === 'bookings') await load();
+    return;
+  }
   if (action === 'feedback-read') {
     const { slug, id } = trigger.dataset;
     trigger.disabled = true;
@@ -1540,7 +1656,13 @@ async function onSubmit(event) {
     await load();
     return;
   }
-  if (!['siteForm', 'itemForm', 'adminForm', 'removeForm', 'tipsForm', 'menuLinkForm', 'menuImportForm', 'themeForm', 'guestLayoutForm', 'reviewSettingsForm'].includes(form.id)) return;
+  if (form.id === 'bookingsFilters') {
+    event.preventDefault();
+    state.bookingsQuery = { status: form.elements.status.value, page: 1 };
+    await load();
+    return;
+  }
+  if (!['siteForm', 'itemForm', 'adminForm', 'removeForm', 'tipsForm', 'menuLinkForm', 'menuImportForm', 'themeForm', 'guestLayoutForm', 'reviewSettingsForm', 'bookingSettingsForm'].includes(form.id)) return;
   event.preventDefault();
   const submit = form.querySelector('button[type="submit"], button:not([type])');
   const error = form.querySelector('.form-error');
@@ -1559,6 +1681,12 @@ async function onSubmit(event) {
       data.show_reviews = form.elements.show_reviews.checked;
       await api(base + '/guest', { method: 'PUT', version: form.dataset.version, body: data });
       toast('Настройки отзывов сохранены');
+    }
+    if (form.id === 'bookingSettingsForm') {
+      await api(base + '/bookings', { method: 'PUT', body: {
+        show_booking: form.elements.show_booking.checked, previous_show_booking: data.previous_show_booking === '1',
+      } });
+      toast('Настройки бронирования сохранены');
     }
     if (form.id === 'themeForm') {
       await api(base + '/theme', { method: 'PUT', body: data });
