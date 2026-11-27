@@ -3,73 +3,155 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f7f4ee">
-  <meta name="description" content="Тап. — мини-сайт заведения с NFC-меткой, меню, соцсетями, картами и обратной связью от гостей.">
-  <title>О проекте «Тап.» — мини-сайт заведения и NFC-метки</title>
-  <link rel="stylesheet" href="/assets/styles.css">
+  <meta name="theme-color" content="#f4f5ef">
+  <meta name="description" content="Тап. — мини-сайт для заведений. Меню, услуги, акции, бронирование и отзывы открываются по NFC-метке или ссылке.">
+  <title>Тап. — мини-сайты для заведений и NFC-метки</title>
+  <link rel="stylesheet" href="/assets/about.css">
 </head>
 <body class="about-body">
-  <div class="about-page">
-    <header class="about-header">
-      <a class="brand" href="/about" aria-label="Тап. О проекте" aria-current="page">
-        <span class="brand-icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="/assets/icons.svg#nfc"/></svg>
-        </span>
-        <span>тап<span class="brand-dot">.</span></span>
-      </a>
-      <a class="about-nav-link" href="/admin">Панель управления</a>
-    </header>
+  <a class="about-skip" href="#main">К содержимому</a>
+  <header class="about-header about-wrap">
+    <a class="about-brand" href="/about" aria-label="Тап. О проекте" aria-current="page">
+      <span class="about-brand-icon"><svg width="24" height="24" aria-hidden="true"><use href="/assets/icons.svg#nfc"/></svg></span>
+      тап<span class="about-brand-dot">.</span>
+    </a>
+    <nav class="about-nav" aria-label="По странице">
+      <a href="#how">Как работает</a>
+      <a href="#demos">Примеры</a>
+      <a href="#features">Возможности</a>
+    </nav>
+    <a class="about-button about-button-outline" href="/admin">Войти в панель</a>
+  </header>
 
-    <main class="about-main">
-      <section class="about-hero" aria-labelledby="about-title">
-        <div class="about-intro">
-          <h1 id="about-title">Мини-сайт заведения по NFC-метке</h1>
-          <p>Гость подносит телефон к метке, нажимает на уведомление и открывает меню, соцсети и карты. Страница открывается в браузере без приложения и регистрации.</p>
-          <a class="button primary" href="/coffe1">Открыть демо-страницу</a>
+  <main id="main" class="about-wrap">
+    <section class="about-hero" aria-labelledby="about-title">
+      <div class="about-intro">
+        <h1 id="about-title">Мини-сайт заведения <em>по NFC-метке</em></h1>
+        <p>Гость подносит телефон к метке и открывает меню, услуги или акцию. Вы меняете содержимое в панели, а адрес страницы остаётся прежним.</p>
+        <div class="about-actions">
+          <a class="about-button about-button-primary" href="#demos">Посмотреть примеры</a>
+          <a class="about-button about-button-outline" href="#how">Как работает NFC</a>
         </div>
-        <figure class="about-demo">
-          <img class="about-cover" src="/assets/coffe1/cover.jpg" alt="Чашка кофе и круассан на столе у окна" width="1440" height="960" fetchpriority="high">
-          <figcaption><div class="about-venue"><img src="/assets/coffe1/logo.png" alt="" width="40" height="40"><div><strong>Кофе 01</strong><span>Демо-кофейня</span></div></div><a href="/coffe1/menu">Смотреть меню</a></figcaption>
-        </figure>
-      </section>
+      </div>
+      <div class="about-stage">
+        <img class="about-stage-photo" src="/assets/about-nfc.jpg" alt="Иллюстрация NFC-метки на столе кофейни" width="1024" height="1024" fetchpriority="high">
+        <a class="about-phone" href="/coffe1" aria-label="Открыть гостевую страницу «Кофе 01»">
+          <div class="about-phone-screen" aria-hidden="true">
+            <img class="about-phone-cover" src="/assets/coffe1/cover.jpg" alt="" width="1440" height="960">
+            <div class="about-phone-venue">
+              <img src="/assets/coffe1/logo.png" alt="" width="40" height="40">
+              <div><span>Кофейня</span><strong>Кофе 01</strong></div>
+            </div>
+            <div class="about-phone-actions">
+              <span><svg width="16" height="16"><use href="/assets/icons.svg#book"/></svg>Открыть меню</span>
+              <span><svg width="16" height="16"><use href="/assets/icons.svg#gift"/></svg>Подарки и акции</span>
+              <div>
+                <svg width="19" height="19"><use href="/assets/icons.svg#telegram"/></svg>
+                <svg width="19" height="19"><use href="/assets/icons.svg#instagram"/></svg>
+                <svg width="19" height="19"><use href="/assets/icons.svg#vk"/></svg>
+              </div>
+            </div>
+          </div>
+        </a>
+      </div>
+    </section>
 
-      <section class="about-section" aria-labelledby="about-features">
-        <h2 id="about-features">Что есть на странице заведения</h2>
-        <div class="about-features">
-          <div>
-            <h3>Меню с ценами и фото</h3>
-            <p>Гость может посмотреть блюда и цены за столом. Вы можете обновлять меню в панели, и изменения появятся по той же ссылке.</p>
-          </div>
-          <div>
-            <h3>Соцсети и карты</h3>
-            <p>На странице можно разместить ссылки на Instagram, Telegram, ВКонтакте и карты. Гость может подписаться, построить маршрут или поделиться ссылкой.</p>
-          </div>
-          <div>
-            <h3>Обратная связь</h3>
-            <p>Гости могут оценить визит и рассказать, что пошло не так. Отправленные комментарии видны владельцу и администраторам заведения в панели.</p>
-          </div>
-        </div>
-        <p class="about-benefit">После визита гости могут снова открыть страницу по той же ссылке, найти заведение на картах или поделиться им с друзьями.</p>
-      </section>
+    <section class="about-section" id="how" aria-labelledby="how-title">
+      <div class="about-section-heading">
+        <h2 id="how-title">Как это работает</h2>
+        <p>Одна и та же страница открывается по NFC-метке, QR-коду или обычной ссылке.</p>
+      </div>
+      <ol class="about-steps">
+        <li><h3>Подготовьте страницу</h3><p>Добавьте логотип, меню или услуги, контакты и ссылки на соцсети.</p></li>
+        <li><h3>Разместите метку</h3><p>Поставьте её на стол, стойку или рядом с кассой. По этой же ссылке можно сделать QR-код.</p></li>
+        <li><h3>Гость открывает страницу</h3><p>Он подносит совместимый телефон к метке и нажимает на уведомление. Страница открывается в браузере без регистрации.</p></li>
+      </ol>
+    </section>
 
-      <section class="about-section" aria-labelledby="about-questions">
-        <h2 id="about-questions">Частые вопросы</h2>
-        <div class="about-faq">
-          <details open>
-            <summary>Что, если гость захочет поставить две звезды?</summary>
-            <p>При оценке от одной до трёх звёзд откроется форма приватного комментария. Гость может рассказать, что случилось, и по желанию указать имя и место визита. После выбора оценки появятся подключённые ссылки на Яндекс или Google. Публичный отзыв гость оставляет в самом сервисе.</p>
-          </details>
-          <details>
-            <summary>Чем NFC-метка удобнее QR-кода?</summary>
-            <p>С NFC достаточно поднести совместимый телефон к метке и нажать на уведомление. Камеру открывать не нужно, и метка считывается даже при слабом освещении. QR-код можно разместить рядом со ссылкой на ту же страницу для гостей, которым удобнее сканировать камерой или у которых NFC недоступен.</p>
-          </details>
-          <details>
-            <summary>Нужно ли менять метку, если изменилось меню?</summary>
-            <p>Нет, метка хранит адрес мини-сайта. Можно менять блюда, цены и ссылки в панели, а гости продолжат открывать страницу той же меткой.</p>
-          </details>
+    <section class="about-section about-demos-section" id="demos" aria-labelledby="demos-title">
+      <div class="about-section-heading">
+        <h2 id="demos-title">Посмотрите глазами гостя</h2>
+        <p>Откройте готовую страницу кофейни или барбершопа и попробуйте меню или каталог услуг.</p>
+      </div>
+      <div class="about-demos">
+        <a class="about-demo" href="/coffe1">
+          <img src="/assets/coffe1/cover.jpg" alt="" width="1440" height="960" loading="lazy" decoding="async">
+          <div class="about-demo-caption">
+            <div><span>Кофейня</span><h3>Кофе 01</h3></div>
+            <span class="about-demo-action">Открыть демо</span>
+          </div>
+        </a>
+        <a class="about-demo" href="/barbershop">
+          <img src="/assets/barbershop/cover.jpg" alt="" width="1120" height="560" loading="lazy" decoding="async">
+          <div class="about-demo-caption">
+            <div><span>Барбершоп</span><h3>Контур</h3></div>
+            <span class="about-demo-action">Открыть демо</span>
+          </div>
+        </a>
+      </div>
+    </section>
+
+    <section class="about-section" id="features" aria-labelledby="features-title">
+      <div class="about-section-heading">
+        <h2 id="features-title">Что можно добавить</h2>
+        <p>Вы выбираете оформление, включаете нужные блоки и меняете их порядок.</p>
+      </div>
+      <dl class="about-features">
+        <div>
+          <svg width="24" height="24" aria-hidden="true"><use href="/assets/icons.svg#book"/></svg>
+          <dt>Меню и услуги</dt><dd>Покажите позиции с ценами, фотографиями и описаниями.</dd>
         </div>
-      </section>
-    </main>
-  </div>
+        <div>
+          <svg width="24" height="24" aria-hidden="true"><use href="/assets/icons.svg#gift"/></svg>
+          <dt>Подарки и акции</dt><dd>Выделите предложение на главной и добавьте условия, которые гость откроет нажатием.</dd>
+        </div>
+        <div>
+          <svg width="24" height="24" aria-hidden="true"><use href="/assets/icons.svg#calendar"/></svg>
+          <dt>Бронь и запись</dt><dd>Принимайте заявки на столик или ведите гостей в свой сервис онлайн-записи.</dd>
+        </div>
+        <div>
+          <svg width="24" height="24" aria-hidden="true"><use href="/assets/icons.svg#star"/></svg>
+          <dt>Оценки и отзывы</dt><dd>Добавьте ссылки на Яндекс или Google и получайте приватные комментарии гостей.</dd>
+        </div>
+        <div>
+          <svg width="24" height="24" aria-hidden="true"><use href="/assets/icons.svg#map"/></svg>
+          <dt>Контакты и Wi-Fi</dt><dd>Покажите график, адрес, маршрут, соцсети и пароль от гостевой сети.</dd>
+        </div>
+        <div>
+          <svg width="24" height="24" aria-hidden="true"><use href="/assets/icons.svg#heart"/></svg>
+          <dt>Чаевые</dt><dd>Подключите ссылку для чаевых, чтобы гость мог поблагодарить команду с телефона.</dd>
+        </div>
+      </dl>
+      <p class="about-owner-note"><svg width="20" height="20" aria-hidden="true"><use href="/assets/icons.svg#bars"/></svg>В панели видно, сколько гостей пришло с NFC и как часто они открывают меню.</p>
+    </section>
+
+    <section class="about-section about-questions" id="faq" aria-labelledby="faq-title">
+      <h2 id="faq-title">Частые вопросы</h2>
+      <div class="about-faq">
+        <details>
+          <summary>Нужно ли менять метку при обновлении меню?<svg width="18" height="18" aria-hidden="true"><use href="/assets/icons.svg#plus"/></svg></summary>
+          <p>Метка хранит ссылку. После сохранения изменений в панели гости увидят новое меню по прежнему адресу.</p>
+        </details>
+        <details>
+          <summary>Как открыть страницу без NFC?<svg width="18" height="18" aria-hidden="true"><use href="/assets/icons.svg#plus"/></svg></summary>
+          <p>Распечатайте QR-код с той же ссылкой или поделитесь адресом напрямую. Для просмотра страницы понадобится интернет.</p>
+        </details>
+        <details>
+          <summary>Что происходит после низкой оценки?<svg width="18" height="18" aria-hidden="true"><use href="/assets/icons.svg#plus"/></svg></summary>
+          <p>При оценке от одной до трёх звёзд гость может отправить приватный комментарий. Владелец и администратор заведения увидят его в панели. Публичный отзыв гость оставляет на выбранной площадке.</p>
+        </details>
+      </div>
+    </section>
+
+    <section class="about-cta" aria-labelledby="cta-title">
+      <div><h2 id="cta-title">Для владельцев и администраторов</h2><p>Управляйте страницами, меню, акциями и статистикой своих заведений.</p></div>
+      <a class="about-button about-button-accent" href="/admin">Войти в панель</a>
+    </section>
+  </main>
+
+  <footer class="about-footer about-wrap">
+    <a href="/about" class="about-footer-brand">Тап.</a>
+    <nav aria-label="В подвале"><a href="#demos">Примеры</a><a href="#faq">Частые вопросы</a></nav>
+  </footer>
 </body>
 </html>

@@ -4,6 +4,8 @@ import { createHash } from 'node:crypto';
 const types = {
   'index.html': 'text/html; charset=utf-8',
   'about.html': 'text/html; charset=utf-8',
+  'about.css': 'text/css; charset=utf-8',
+  'about-nfc.jpg': 'image/jpeg',
   'app.js': 'text/javascript; charset=utf-8',
   'icons.svg': 'image/svg+xml',
   'styles.css': 'text/css; charset=utf-8',
@@ -24,7 +26,7 @@ export function readAssets() {
   for (const page of ['app.js', 'about.html']) {
     assets[page].text = assets[page].text.replaceAll('/assets/icons.svg#', `/assets/icons.svg?v=${iconsVersion}#`);
   }
-  for (const name of ['app.js', 'styles.css']) {
+  for (const name of ['app.js', 'styles.css', 'about.css']) {
     const version = createHash('sha256').update(assets[name].text).digest('hex').slice(0, 12);
     const path = '/assets/' + name;
     for (const page of ['index.html', 'about.html']) {
