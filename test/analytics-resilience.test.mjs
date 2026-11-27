@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
-import { createApp } from '../src/worker.js';
+import { createApp, dayKey } from '../src/worker.js';
 import { readAssets } from '../scripts/assets.mjs';
 import { seedDemo } from '../scripts/demo.mjs';
 
@@ -90,6 +90,7 @@ test('a failed report leaves the owner and assigned administrator able to manage
   } });
   const email = manager.email;
   assert.equal((await request('/api/overview', { email })).status, 500);
+  assert.equal((await request('/api/sites', { email, method: 'POST', body: { slug: 'another-venue' } })).status, 403);
   assert.equal((await request('/api/sites')).status, 401);
   const listing = await (await request('/api/sites', { email })).json();
   assert.deepEqual(listing.sites.map(({ slug }) => slug), ['moka-coffee']);
@@ -102,7 +103,25 @@ test('a failed report leaves the owner and assigned administrator able to manage
   assert.ok(bundle.items.some((entry) => entry.name === item.name));
 });
 
-test('the panel requests statistics only for reports and keeps the site tabs visible', async () => {
+test('tips totals follow venue assignments and setup is owner-only', async (t) => {
+  const { db, request } = fixture(t);
+  const day = dayKey();
+  const record = db.prepare("INSERT INTO tip_opens (site_id, method, day, source, count) VALUES (?, 'alpha', ?, 'nfc', ?)");
+  record.run('moka', day, 2);
+  record.run('basil', day, 5);
+  assert.equal((await request('/api/tips')).status, 401);
+  const managerReport = await (await request('/api/tips?site=moka-coffee', { email: manager.email })).json();
+  assert.equal(managerReport.tips.counts[0].count, 2);
+  assert.equal(managerReport.settings, null);
+  assert.equal((await request('/api/tips?site=basilico', { email: manager.email })).status, 404);
+  const ownerReport = await (await request('/api/tips', { email: 'owner@example.test' })).json();
+  assert.equal(ownerReport.tips.counts[0].count, 7);
+  const ownerSiteReport = await (await request('/api/tips?site=basilico', { email: 'owner@example.test' })).json();
+  assert.equal(ownerSiteReport.tips.counts[0].count, 5);
+  assert.ok(ownerSiteReport.settings.checkout);
+});
+
+test('reports in the main navigation stay separate from the assigned mini-site editor', async () => {
   const code = read('public/app.js').replace(/\bstart\(\);\s*$/, '');
   const app = { innerHTML: '' };
   const modal = { addEventListener() {} };
@@ -119,6 +138,11 @@ test('the panel requests statistics only for reports and keeps the site tabs vis
       requested.push(path);
       if (path === '/api/sites') return Response.json({ user: manager, sites: [site] });
       if (path === '/api/sites/moka-coffee') return Response.json(bundle);
+      if (path.startsWith('/api/bookings?')) return Response.json({ bookings: [{
+        id: 'request', site_slug: site.slug, site_name: site.name, guest_name: 'Гость', phone: '+375290000001',
+        visit_date: '2030-01-01', visit_time: '18:00', party_size: 2, status: 'pending', created_at: '2026-11-27T10:00:00Z',
+      }], page: 1 });
+      if (path.startsWith('/api/tips?')) return Response.json({ tips: { counts: [], paid: { count: 0, amount: 0 } }, settings: null });
       return delayedReport?.promise ?? Response.json({ error: 'report unavailable' }, { status: 500 });
     },
   };
@@ -130,25 +154,37 @@ test('the panel requests statistics only for reports and keeps the site tabs vis
   location.pathname = '/admin/sites';
   await load();
   assert.match(app.innerHTML, /Moka Coffee/);
-  assert.match(app.innerHTML, /Создание и удаление мини-сайтов, выдачу и отзыв доступа согласовывайте с владельцем платформы/);
+  assert.match(app.innerHTML, /Новые страницы создаёт владелец платформы/);
   assert.doesNotMatch(app.innerHTML, /data-action="new-site"/);
   location.pathname = '/admin/sites/moka-coffee/access';
   await load();
   assert.equal(location.pathname, '/admin/sites/moka-coffee');
   assert.match(app.innerHTML, /Капучино/);
+  assert.match(app.innerHTML, /href="\/admin\/sites\/moka-coffee\/services"/);
   assert.doesNotMatch(app.innerHTML, /href="\/admin\/sites\/moka-coffee\/access"/);
+  assert.doesNotMatch(app.innerHTML, /href="\/admin\/sites\/moka-coffee\/(feedback|bookings|tips|analytics)"/);
   assert.deepEqual(requested, ['/api/overview?days=7', '/api/sites', '/api/sites/moka-coffee']);
-  location.pathname += '/analytics';
+  location.pathname = '/admin/bookings';
   await load();
+  assert.match(app.innerHTML, /<h1>Бронирование<\/h1>/);
+  assert.match(app.innerHTML, /Гость/);
+  assert.doesNotMatch(app.innerHTML, /bookingSettingsForm|<nav class="tabs"/);
+  location.pathname = '/admin/tips';
+  await load();
+  assert.match(app.innerHTML, /Подтверждённые оплаты/);
+  assert.doesNotMatch(app.innerHTML, /tipsForm/);
+  location.pathname = '/admin/analytics';
+  location.search = '?site=moka-coffee';
+  await load();
+  assert.equal(requested.at(-1), '/api/overview?days=7&site=moka-coffee');
   assert.match(app.innerHTML, /Статистика временно недоступна/);
-  assert.match(app.innerHTML, /<nav class="tabs"/);
+  assert.doesNotMatch(app.innerHTML, /<nav class="tabs"/);
   assert.match(app.innerHTML, /data-action="retry-load"/);
 
   delayedReport = Promise.withResolvers();
   const slowReport = load();
   await new Promise((resolve) => setImmediate(resolve));
-  assert.match(app.innerHTML, /Загрузка статистики/);
-  assert.match(app.innerHTML, /<nav class="tabs"/);
+  assert.match(app.innerHTML, /Загрузка…/);
   location.pathname = '/admin/sites/moka-coffee';
   await load();
   delayedReport.resolve(Response.json({ error: 'report unavailable' }, { status: 500 }));

@@ -23,8 +23,8 @@ test('only enabled published venues accept bookings, and assigned staff can proc
     app.fetch(new Request(origin + path, { method, headers: {
       Origin: originHeader, 'Content-Type': 'application/json', 'x-demo-role': role,
     }, body: body && JSON.stringify(body) }), env);
-  const configure = (enabled, previous, path = inbox) => fetch(path, {
-    method: 'PUT', body: { show_booking: enabled, previous_show_booking: previous },
+  const configure = (enabled, previous, path = inbox, role = 'manager') => fetch(path, {
+    method: 'PUT', role, body: { show_booking: enabled, previous_show_booking: previous },
   });
   const submit = (body = data, options = {}) => fetch(publicEndpoint, { method: 'POST', body, ...options });
   const model = async () => JSON.parse((await (await fetch('/moka-coffee')).text()).match(/id="page-data">([^<]*)<\/script>/)[1]);
@@ -44,6 +44,13 @@ test('only enabled published venues accept bookings, and assigned staff can proc
   assert.equal((await submit({ ...data, phone: 'без номера' })).status, 400);
   assert.equal((await submit()).status, 201);
   assert.equal((await submit()).status, 200);
+  assert.equal((await configure(true, false, '/api/sites/basilico/bookings', 'owner')).status, 200);
+  const other = { ...data, id: crypto.randomUUID(), guest_name: 'Другой гость' };
+  assert.equal((await fetch('/api/bookings/basilico', { method: 'POST', body: other })).status, 201);
+  assert.deepEqual((await (await fetch('/api/bookings')).json()).bookings.map(({ id, site_slug }) => [id, site_slug]), [[data.id, 'moka-coffee']]);
+  assert.deepEqual((await (await fetch('/api/bookings?site=basilico')).json()).bookings, []);
+  assert.deepEqual((await (await fetch('/api/bookings?site=basilico', { role: 'owner' })).json()).bookings.map(({ id }) => id), [other.id]);
+  assert.equal((await fetch('/admin/sites/moka-coffee/bookings')).headers.get('Location'), '/admin/bookings?site=moka-coffee');
   assert.ok(!JSON.stringify(await model()).includes(data.guest_name));
   assert.equal((await fetch('/api/sites/basilico/bookings')).status, 404);
   assert.deepEqual((await (await fetch(inbox + '?status=pending')).json()).bookings.map(({ id, phone }) => [id, phone]),

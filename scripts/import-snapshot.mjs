@@ -14,6 +14,20 @@ for (const table of ['admin_profiles', 'site_bookings']) {
 }
 if (!tableNames.every((table) => Array.isArray(tables?.[table]))) throw new Error('The snapshot is missing a table.');
 
+const legacyServiceSites = new Set(tables.sites.filter((site) => site.type === 'Студия красоты' && site.legacy_services === undefined).map(({ id }) => id));
+for (const site of tables.sites) {
+  if (!legacyServiceSites.has(site.id)) continue;
+  site.legacy_services = 1;
+  site.show_services = site.show_menu ?? 0;
+  site.services_url = site.menu_url ?? '';
+  site.show_menu = 0;
+  site.menu_url = '';
+  if (typeof site.guest_order === 'string') site.guest_order = site.guest_order.replaceAll('"menu"', '"services"');
+}
+for (const item of tables.items) {
+  if (item.catalog === undefined && legacyServiceSites.has(item.site_id)) item.catalog = 'services';
+}
+
 const photoKeys = [
   ...tables.sites.flatMap(({ logo_key, cover_key }) => [logo_key, cover_key]),
   ...tables.items.map(({ photo_key }) => photo_key),

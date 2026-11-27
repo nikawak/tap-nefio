@@ -183,8 +183,11 @@ tbody tr:focus-within { background: var(--raised); }
 .numeric { text-align: right; white-space: nowrap; }
 td strong { font-weight: 600; }
 .table-note { display: block; color: var(--muted); margin-top: 4px; }
-.table-item { display: flex; gap: 8px; align-items: center; }
-.table-item img { width: 40px; height: 40px; object-fit: cover; border-radius: 8px; flex: none; background: var(--canvas); }
+.table-item { display: flex; gap: 12px; align-items: center; }
+.table-item img { width: 48px; height: 48px; object-fit: cover; border-radius: 8px; flex: none; background: var(--canvas); }
+.catalog-editor, .guest-settings { display: grid; min-width: 0; gap: 16px; }
+.catalog-editor-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px 24px; padding: 20px; }
+.catalog-editor-header p { margin-top: 4px; color: var(--muted); font-size: .875rem; }
 .row-actions { display: flex; justify-content: flex-end; }
 .item-order-cell { width: 1%; padding-inline: 8px; text-align: center; }
 .item-order-handle { display: grid; place-items: center; width: 100%; min-width: 48px; min-height: 32px; border-radius: 8px; color: var(--brand-deep); cursor: grab; user-select: none; touch-action: none; }
@@ -212,15 +215,14 @@ td strong { font-weight: 600; }
 .tabs a:hover, .tabs a.selected { color: var(--brand); }
 .tabs a.selected { border-color: var(--brand); font-weight: 600; }
 .tabs a:focus-visible { outline-offset: -3px; }
-.feedback-badge { color: var(--brand-deep); font: .75rem/16px var(--mono); }
 .feedback-inbox, .bookings { display: grid; gap: 12px; }
-.feedback-settings { margin-bottom: 16px; }
-.feedback-inbox > .page-heading { margin-bottom: 0; }
+.feedback-inbox > .page-heading, .bookings > .page-heading { margin-bottom: 0; }
 .feedback-filters { padding: 16px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); align-items: end; }
 .feedback-card, .booking-card { display: grid; gap: 8px; padding: clamp(16px, 3.5vw, 24px); }
 .feedback-card header { display: flex; align-items: center; justify-content: space-between; }
 .booking-card header { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: baseline; justify-content: space-between; }
 .booking-card p { margin: 0; overflow-wrap: anywhere; }
+.booking-venue { color: var(--muted); }
 .booking-card small { color: var(--muted); }
 .booking-comment { white-space: pre-wrap; }
 .feedback-card > button { justify-self: start; }
@@ -262,6 +264,7 @@ td strong { font-weight: 600; }
 .tip-option-settings .form-stack > p { font-size: .88rem; }
 .tip-metrics { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 12px; }
 .tip-metrics .metric { min-height: 108px; }
+.tips-settings, .tips-settings-hint { margin-top: 24px; }
 .form-stack { display: grid; gap: 12px; }
 .form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
 .form-stack label { display: grid; gap: 4px; color: var(--ink); font-size: .88rem; font-weight: 600; }
@@ -544,7 +547,7 @@ body:has(#modal[open], .theme-catalogue[open]) { overflow: hidden; }
   border-radius: var(--venue-radius);
   background: var(--venue-white);
 }
-.landing-menu { max-width: 640px; }
+.landing-menu { max-width: 680px; }
 .public-draft-banner { padding: 8px 12px; background: #f8eed7; color: #5d420f; font-size: .875rem; text-align: center; font-weight: 600; }
 .public-hero { position: relative; isolation: isolate; overflow: hidden; border-bottom: 1px solid var(--venue-line); }
 .public-cover { width: 100%; aspect-ratio: 2 / 1; height: auto; object-fit: cover; object-position: 50% 62%; background: var(--venue-hero); }
@@ -561,10 +564,10 @@ body:has(#modal[open], .theme-catalogue[open]) { overflow: hidden; }
 }
 .landing:not(.landing-menu) .public-hero:not(.with-cover) :is(.public-type, .public-description), .theme-preview .public-type { color: inherit; }
 .landing-menu .public-hero { background: var(--venue-bg); }
+.landing-menu .public-cover { height: clamp(96px, 22vw, 156px); aspect-ratio: auto; }
 .landing-menu .public-hero-inner { align-items: center; padding-block: 16px; }
 .landing-menu .public-hero .site-icon { width: 44px; height: 44px; }
 .landing-menu .public-hero h1 { font-size: clamp(1.5rem, 5vw, 2rem); }
-.landing-menu .public-description { margin-top: 4px; font-size: .875rem; }
 
 .public-content { padding: 24px 32px; }
 .public-actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -596,19 +599,27 @@ button.public-button { width: 100%; text-align: left; }
 .guest-wifi-info dd { user-select: all; }
 .guest-wifi-info > p { color: var(--venue-muted); font-size: .875rem; }
 .public-footer { display: flex; align-items: center; justify-content: center; gap: 4px; padding: 12px 8px; border-top: 1px solid var(--venue-line); color: var(--venue-muted); font-size: .8125rem; }
-.public-menu-heading { display: flex; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
-.public-menu-heading h2 { font-family: var(--venue-heading); font-size: 2rem; font-weight: 500; line-height: 1.12; }
+.public-menu-heading { display: grid; gap: 12px; margin-bottom: 20px; }
+.public-menu-heading > div { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; }
+.public-menu-heading h2 { color: var(--venue-dark); font-family: var(--venue-heading); font-size: clamp(1.75rem, 5vw, 2.25rem); font-weight: 500; line-height: 1.12; }
 .public-menu-heading a, .tip-home { color: var(--venue-accent); font-size: .875rem; font-weight: 500; text-decoration: underline; text-underline-offset: .2em; }
-.public-category + .public-category { margin-top: 24px; }
-.public-category h3 { padding-bottom: 8px; color: var(--venue-dark); font-size: 1.125rem; font-weight: 600; overflow-wrap: anywhere; }
-.public-category ul { padding: 0; margin: 0; list-style: none; }
-.public-category li { border-top: 1px solid var(--venue-line); }
-.public-item { width: 100%; display: flex; align-items: baseline; gap: 12px; min-height: 52px; padding: 12px 4px; border: 0; border-radius: var(--venue-control); color: var(--venue-dark); background: transparent; text-align: left; }
+.public-menu-heading > a { justify-self: start; }
+.public-categories { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+.public-categories a { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; border: 1px solid var(--venue-line); border-radius: var(--venue-control); color: var(--venue-dark); font-size: .875rem; overflow-wrap: anywhere; }
+.public-categories a:hover { background: var(--venue-bg); }
+.public-category { scroll-margin-top: 16px; }
+.public-category + .public-category { margin-top: 28px; }
+.public-category h3 { margin-bottom: 8px; color: var(--venue-dark); font-size: 1.125rem; font-weight: 600; overflow-wrap: anywhere; }
+.public-category ul { padding: 0; margin: 0; list-style: none; border: 1px solid var(--venue-line); border-radius: var(--venue-control); }
+.public-category li + li { border-top: 1px solid var(--venue-line); }
+.public-item { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 12px 16px; border: 0; border-radius: var(--venue-control); color: var(--venue-dark); background: transparent; text-align: left; transition: background-color 140ms var(--ease); }
 .public-item:hover { background: var(--venue-bg); }
+.public-item-thumb { width: clamp(44px, 12vw, 64px); height: auto; aspect-ratio: 1; flex: none; border-radius: max(4px, calc(var(--venue-control) - 4px)); background: var(--venue-bg); object-fit: cover; }
 .public-item-copy { min-width: 0; flex: 1; overflow-wrap: anywhere; }
 .public-item-copy strong { display: block; font-weight: 600; }
-.public-item-summary { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--venue-muted); font-size: .875rem; margin-top: 4px; }
-.public-item-price { flex: none; white-space: nowrap; font-weight: 600; }
+.public-item-summary { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--venue-muted); font-size: .875rem; margin-top: 4px; line-height: 1.45; }
+.public-item-price { flex: none; white-space: nowrap; color: var(--venue-accent); font-weight: 600; }
+.public-catalog-empty { padding: 16px; color: var(--venue-muted); border: 1px solid var(--venue-line); border-radius: var(--venue-control); }
 
 .landing-body #modal, .tip-page-card {
   --venue-line: color-mix(in srgb, var(--venue-dark) 12%, var(--venue-white));
@@ -711,6 +722,8 @@ button.public-button { width: 100%; text-align: left; }
   .chart-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
   .x-labels span:not(:first-child, :last-child, .major-date) { display: none; }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .public-item { padding-inline: 12px; gap: 8px; }
+  .catalog-editor-header { padding: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; }

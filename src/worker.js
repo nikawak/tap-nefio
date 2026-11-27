@@ -1,7 +1,11 @@
 const actionColumns = { maps: 'maps_url', telegram: 'telegram_url', instagram: 'instagram_url', vk: 'vk_url' };
 const contactColumns = Object.values(actionColumns);
 const reviewColumns = { yandex: 'yandex_review_url', google: 'google_review_url' };
-const guestBlocks = ['hours', 'wifi', 'menu', 'booking', 'feedback', 'website', 'tips', 'telegram', 'instagram', 'vk'];
+const guestBlocks = ['hours', 'wifi', 'menu', 'services', 'booking', 'feedback', 'website', 'tips', 'telegram', 'instagram', 'vk'];
+const catalogs = {
+  menu: { kind: 'menu', url: 'menu_url', visible: 'show_menu', version: 'menu_order_version', linkLabel: 'внешнее меню' },
+  services: { kind: 'services', url: 'services_url', visible: 'show_services', version: 'services_order_version', linkLabel: 'внешний список услуг' },
+};
 const bookingTransitions = { confirmed: 'pending', declined: 'pending', cancelled: 'confirmed' };
 const bookingClock = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Minsk', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const currencies = ['BYN', 'RUB', 'KZT', 'USD', 'EUR'];
@@ -624,7 +628,7 @@ function itemWithPhoto({ photo_key: key, ...item }, preview = false) {
   return { ...item, photo_url: photoUrl(photoPrefix, key, preview) };
 }
 
-function siteWithPhotos({ logo_key, cover_key, menu_order_version, hidden_links, ...site }, preview = false) {
+function siteWithPhotos({ logo_key, cover_key, menu_order_version, services_order_version, legacy_services, hidden_links, ...site }, preview = false) {
   if (site.guest_order !== undefined) {
     const order = JSON.parse(site.guest_order);
     site.guest_order = [...new Set([...order.filter((key) => guestBlocks.includes(key)), ...guestBlocks])];
@@ -730,19 +734,19 @@ function httpsLink(value) {
   return null;
 }
 
-async function saveMenuLink(request, url, db, site) {
+async function saveCatalogLink(request, url, db, site, catalog) {
   const data = await body(request);
-  const value = field(data, 'menu_url', 2048);
+  const value = field(data, catalog.url, 2048);
   const destination = httpsLink(value);
   if (value && (!destination || destination.origin === url.origin)) {
-    fail(400, 'Введите полную HTTPS-ссылку на внешнее меню.');
+    fail(400, `Введите полную HTTPS-ссылку на ${catalog.linkLabel}.`);
   }
-  const visible = optionalFlag(data, 'show_menu');
-  const previous = optionalFlag(data, 'previous_show_menu');
-  if (!await q(db, `UPDATE sites SET menu_url=?, show_menu=COALESCE(?, show_menu)
-    WHERE id=? AND menu_url=? AND show_menu=COALESCE(?, show_menu) RETURNING id`,
+  const visible = optionalFlag(data, catalog.visible);
+  const previous = optionalFlag(data, 'previous_' + catalog.visible);
+  if (!await q(db, `UPDATE sites SET ${catalog.url}=?, ${catalog.visible}=COALESCE(?, ${catalog.visible})
+    WHERE id=? AND ${catalog.url}=? AND ${catalog.visible}=COALESCE(?, ${catalog.visible}) RETURNING id`,
     destination?.href ?? '', visible, site.id, field(data, 'previous_url', 2048), previous).first()) {
-    fail(412, 'Настройки меню уже изменились. Откройте их заново.');
+    fail(412, 'Настройки уже изменились. Откройте их заново.');
   }
 }
 
@@ -761,7 +765,7 @@ async function saveWebsiteButton(request, db, site) {
   }
 }
 
-async function importMenu(request, db, site) {
+async function importCatalog(request, db, site, { kind }) {
   const { currency, items } = await body(request, 512 * 1024);
   if (currency !== undefined && currency !== site.currency) fail(400, 'Валюта в файле должна совпадать с валютой мини-сайта: ' + site.currency + '.');
   if (!Array.isArray(items) || items.length < 1 || items.length > 500) {
@@ -769,7 +773,7 @@ async function importMenu(request, db, site) {
   }
   const fields = items.map((item, index) => {
     try {
-      if (!item || typeof item !== 'object' || Array.isArray(item)) fail(400, 'Ожидалась позиция меню.');
+      if (!item || typeof item !== 'object' || Array.isArray(item)) fail(400, 'Проверьте данные позиции.');
       const value = typeof item.price === 'number' ? String(item.price) : item.price;
       if (typeof value !== 'string' || !/^\d{1,6}(?:[.,]\d{1,2})?$/.test(value.trim())) {
         fail(400, 'Укажите цену с точностью до двух знаков.');
@@ -781,24 +785,25 @@ async function importMenu(request, db, site) {
       fail(400, 'Позиция №' + (index + 1) + '. ' + error.message);
     }
   });
-  const batch = await digest(site.id + '\0' + JSON.stringify(fields));
+  const original = site.legacy_services ? 'services' : 'menu';
+  const batch = await digest(site.id + '\0' + (kind === original ? '' : kind + '\0') + JSON.stringify(fields));
   const start = Date.now();
   const rows = fields.map((row, index) => [batch + '-' + index, ...row, new Date(start + index).toISOString()]);
-  const added = await all(db, `INSERT INTO items (site_id, id, name, category, description, price, available, created_at)
-    SELECT ?, json_extract(value, '$[0]'), json_extract(value, '$[1]'), json_extract(value, '$[2]'),
+  const added = await all(db, `INSERT INTO items (site_id, catalog, id, name, category, description, price, available, created_at)
+    SELECT ?, ?, json_extract(value, '$[0]'), json_extract(value, '$[1]'), json_extract(value, '$[2]'),
       json_extract(value, '$[3]'), json_extract(value, '$[4]'), json_extract(value, '$[5]'), json_extract(value, '$[6]')
-    FROM json_each(?) WHERE 1 ON CONFLICT(id) DO NOTHING RETURNING id`, site.id, JSON.stringify(rows));
+    FROM json_each(?) WHERE 1 ON CONFLICT(id) DO NOTHING RETURNING id`, site.id, kind, JSON.stringify(rows));
   return { added: added.length, skipped: rows.length - added.length };
 }
 
-async function moveItem(request, db, siteId) {
+async function moveItem(request, db, siteId, catalog) {
   const version = expectedVersion(request);
   const data = await body(request);
   const id = field(data, 'id', 100, true);
   const target = field(data, 'target', 100, true);
   const result = await q(db, `WITH positions AS MATERIALIZED (
     SELECT id, ROW_NUMBER() OVER (ORDER BY ${itemOrder}) AS position FROM items
-    WHERE site_id=? AND (SELECT menu_order_version FROM sites WHERE id=?)=?
+    WHERE site_id=? AND catalog=? AND (SELECT ${catalog.version} FROM sites WHERE id=?)=?
   ), move AS (
     SELECT source.position AS start, destination.position AS finish
     FROM positions source JOIN positions destination ON destination.id=? WHERE source.id=?
@@ -811,26 +816,26 @@ async function moveItem(request, db, siteId) {
     FROM positions CROSS JOIN move
   )
   UPDATE items SET sort_order=ranks.new_position FROM ranks
-  WHERE items.site_id=? AND items.id=ranks.id`, siteId, siteId, version, target, id, siteId).run();
-  if (!result.meta.changes) fail(412, 'Список или порядок позиций изменился. Повторите перенос в обновлённом меню.');
+  WHERE items.site_id=? AND items.id=ranks.id`, siteId, catalog.kind, siteId, version, target, id, siteId).run();
+  if (!result.meta.changes) fail(412, 'Список или порядок позиций изменился. Повторите перенос в обновлённом списке.');
 }
 
-async function editItem(request, env, site, id) {
+async function editItem(request, env, site, id, { kind }) {
   const db = env.DB;
   const version = expectedVersion(request);
   const { fields, photo, removePhoto } = await itemInput(request);
   if (!photo && !removePhoto) {
     const result = await q(db, `UPDATE items SET name=?, category=?, description=?, price=?, available=?, edit_version=edit_version+1
-      WHERE site_id=? AND id=? AND edit_version=?`, ...fields, site.id, id, version).run();
+      WHERE site_id=? AND catalog=? AND id=? AND edit_version=?`, ...fields, site.id, kind, id, version).run();
     if (!result.meta.changes) fail(412, itemChanged);
     return;
   }
-  const current = await q(db, 'SELECT photo_key FROM items WHERE site_id=? AND id=? AND edit_version=?', site.id, id, version).first();
+  const current = await q(db, 'SELECT photo_key FROM items WHERE site_id=? AND catalog=? AND id=? AND edit_version=?', site.id, kind, id, version).first();
   if (!current) fail(412, itemChanged);
   const key = await uploadPhoto(env, photo);
   try {
     const result = await q(db, `UPDATE items SET name=?, category=?, description=?, price=?, available=?, photo_key=?, edit_version=edit_version+1
-      WHERE site_id=? AND id=? AND edit_version=?`, ...fields, key, site.id, id, version).run();
+      WHERE site_id=? AND catalog=? AND id=? AND edit_version=?`, ...fields, key, site.id, kind, id, version).run();
     if (!result.meta.changes) fail(412, itemChanged);
   } catch (error) {
     await removePhotoIfUnused(env, key);
@@ -1014,6 +1019,16 @@ async function listSites(db, user) {
   return { user, sites: sites.map((site) => siteWithPhotos(site, site.status === 'draft')) };
 }
 
+async function tipsReport(db, env, user, params) {
+  const { filter, args } = siteScope(user);
+  const slug = params.get('site');
+  const site = slug ? await allowedSite(db, user, slug) : null;
+  const days = ['7', '14', '30'].includes(params.get('days')) ? Number(params.get('days')) : 7;
+  const tips = await tipSummary(db, filter, args, site?.id, todayOffset(1 - days), dayKey());
+  const settings = site && user.role === 'owner' ? getTipForm(await tipSettings(db, site.id), env) : null;
+  return json({ tips, settings });
+}
+
 async function overview(db, user, url) {
   const { filter, args } = siteScope(user);
   const days = ['7', '14', '30'].includes(url.searchParams.get('days')) ? Number(url.searchParams.get('days')) : 7;
@@ -1059,10 +1074,14 @@ async function saveGuestLayout(request, db, site) {
   const data = await body(request);
   const enabled = optionalFlag(data, 'show_reviews');
   let order = Array.isArray(data.guest_order) ? data.guest_order.filter((key) => key !== 'maps') : data.guest_order;
-  if (Array.isArray(order) && order.length === guestBlocks.length - 1 && !order.includes('booking')) {
-    // Older clients can still save their order. Preserve the position of the new button.
-    const index = siteWithPhotos(site).guest_order.indexOf('booking');
-    order = [...order.slice(0, index), 'booking', ...order.slice(index)];
+  if (Array.isArray(order) && order.length < guestBlocks.length) {
+    const missing = guestBlocks.filter((key) => !order.includes(key));
+    if (missing.every((key) => ['booking', 'services'].includes(key))) {
+      // Merge newer buttons into the order sent by older clients.
+      siteWithPhotos(site).guest_order.forEach((key, index) => {
+        if (missing.includes(key)) order.splice(index, 0, key);
+      });
+    }
   }
   if (order !== undefined && (!Array.isArray(order) || order.length !== guestBlocks.length ||
       new Set(order).size !== guestBlocks.length || order.some((key) => !guestBlocks.includes(key)))) {
@@ -1121,14 +1140,17 @@ async function recordBooking(request, url, db, slug) {
   fail(400, 'Выберите дату и время в будущем по Минску.');
 }
 
-async function bookingsInbox(db, params, siteId) {
+async function bookingsInbox(db, params, { filter, args }, siteId) {
   const status = params.get('status');
   const filtered = ['pending', ...Object.keys(bookingTransitions)].includes(status);
   const requestedPage = Number(params.get('page'));
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 && requestedPage < 100000 ? requestedPage : 1;
-  const rows = await all(db, `SELECT id, visit_date, visit_time, party_size, guest_name, phone, comment, status, created_at
-    FROM site_bookings WHERE site_id=?${filtered ? ' AND status=?' : ''}
-    ORDER BY created_at DESC, id DESC LIMIT 25 OFFSET ?`, siteId, ...(filtered ? [status] : []), (page - 1) * 24);
+  const slug = !siteId && params.get('site');
+  const rows = await all(db, `SELECT b.id, b.visit_date, b.visit_time, b.party_size, b.guest_name, b.phone, b.comment, b.status,
+    b.created_at, s.slug AS site_slug, s.name AS site_name FROM site_bookings b JOIN sites s ON s.id=b.site_id
+    ${filter || 'WHERE 1=1'}${siteId ? ' AND s.id=?' : ''}${slug ? ' AND s.slug=?' : ''}${filtered ? ' AND b.status=?' : ''}
+    ORDER BY b.created_at DESC, b.id DESC, s.slug LIMIT 25 OFFSET ?`,
+    ...args, ...(siteId ? [siteId] : []), ...(slug ? [slug] : []), ...(filtered ? [status] : []), (page - 1) * 24);
   return json({ bookings: rows.slice(0, 24), page, hasMore: rows.length > 24 });
 }
 
@@ -1176,18 +1198,21 @@ async function feedbackInbox(db, params, { filter, args }, siteId) {
     highest: 'f.rating DESC, f.created_at DESC, f.id DESC',
   };
   const sort = params.get('sort');
+  const slug = !siteId && params.get('site');
   const clauses = [];
   const values = [...args];
   if (siteId) { clauses.push('site_id=?'); values.push(siteId); }
-  else if (params.get('site')) { clauses.push('s.slug=?'); values.push(params.get('site')); }
+  else if (slug) { clauses.push('s.slug=?'); values.push(slug); }
+  const scoped = `FROM site_feedback f JOIN sites s ON s.id=f.site_id${filter || ' WHERE 1=1'}`;
+  const unread = (await q(db, `SELECT COUNT(*) AS count ${scoped}${clauses.length ? ' AND ' + clauses[0] : ''} AND f.read_at IS NULL`, ...values).first()).count;
   if (['1', '2', '3'].includes(rating)) { clauses.push('rating=?'); values.push(Number(rating)); }
   if (status === 'unread' || status === 'read') clauses.push(status === 'unread' ? 'read_at IS NULL' : 'read_at IS NOT NULL');
   const conditions = clauses.length ? ' AND ' + clauses.join(' AND ') : '';
   const rows = await all(db, `SELECT f.id, f.rating, f.comment, f.guest_name, f.guest_place, f.source, f.created_at, f.read_at,
-    s.slug AS site_slug, s.name AS site_name FROM site_feedback f JOIN sites s ON s.id=f.site_id${filter || ' WHERE 1=1'}${conditions}
+    s.slug AS site_slug, s.name AS site_name ${scoped}${conditions}
     ORDER BY ${Object.hasOwn(sorts, sort) ? sorts[sort] : sorts.recent}, s.slug LIMIT 25 OFFSET ?`,
     ...values, (page - 1) * 24);
-  return json({ reviews: rows.slice(0, 24), page, hasMore: rows.length > 24 });
+  return json({ reviews: rows.slice(0, 24), unread, page, hasMore: rows.length > 24 });
 }
 
 async function saveAdministrator(request, env, site, emailToEdit) {
@@ -1295,19 +1320,22 @@ async function api(request, url, env) {
   }
   if (url.pathname === '/api/overview' && method === 'GET') return json(await overview(db, user, url));
   if (url.pathname === '/api/feedback' && method === 'GET') return feedbackInbox(db, url.searchParams, siteScope(user));
+  if (url.pathname === '/api/bookings' && method === 'GET') return bookingsInbox(db, url.searchParams, siteScope(user));
+  if (url.pathname === '/api/tips' && method === 'GET') return tipsReport(db, env, user, url.searchParams);
   if (url.pathname === '/api/sites' && method === 'GET') return json(await listSites(db, user));
   if (url.pathname === '/api/sites' && method === 'POST') {
     if (user.role !== 'owner') fail(403, 'Создавать сайты может владелец.');
     return json({ site: await saveSite(request, env) }, 201);
   }
-  const route = url.pathname.match(/^\/api\/sites\/([a-z0-9-]+)(?:\/(items|admins|tips|website|feedback|bookings|theme|guest)(?:\/([^/]+))?)?$/);
+  const route = url.pathname.match(/^\/api\/sites\/([a-z0-9-]+)(?:\/(items|services|admins|tips|website|feedback|bookings|theme|guest)(?:\/([^/]+))?)?$/);
   if (!route) fail(404, 'Раздел не найден.');
   const [, slug, section, key] = route;
   const site = await allowedSite(db, user, slug);
   if (!section && method === 'GET') {
     // Read the position list and its order version from the same snapshot.
-    const rows = await all(db, `SELECT items.*, sites.menu_order_version FROM sites
-      LEFT JOIN items ON items.site_id=sites.id WHERE sites.id=? ORDER BY ${itemOrder}`, site.id);
+    const catalog = url.searchParams.get('catalog') === 'services' ? catalogs.services : catalogs.menu;
+    const rows = await all(db, `SELECT items.*, sites.${catalog.version} AS menu_order_version FROM sites
+      LEFT JOIN items ON items.site_id=sites.id AND items.catalog=? WHERE sites.id=? ORDER BY ${itemOrder}`, catalog.kind, site.id);
     if (!rows.length) fail(404, 'Сайт не найден или недоступен.');
     const items = rows.filter((row) => row.id !== null).map(({ menu_order_version, ...item }) => itemWithPhoto(item, true));
     const admins = user.role === 'owner' ? await all(db, 'SELECT a.email, p.first_name, p.last_name, p.phone, p.telegram_username ' +
@@ -1322,7 +1350,7 @@ async function api(request, url, env) {
       WHERE site_id=? AND id=? RETURNING id`, new Date().toISOString(), site.id, key).first()) fail(404, 'Отзыв не найден.');
     return json({ ok: true });
   }
-  if (section === 'bookings' && !key && method === 'GET') return bookingsInbox(db, url.searchParams, site.id);
+  if (section === 'bookings' && !key && method === 'GET') return bookingsInbox(db, url.searchParams, { filter: '', args: [] }, site.id);
   if (section === 'bookings' && key && method === 'PUT') return updateBooking(request, db, site.id, key);
   if (section === 'bookings' && !key && method === 'PUT') {
     const data = await body(request, 1024);
@@ -1362,22 +1390,23 @@ async function api(request, url, env) {
     if (user.role !== 'owner') fail(403, 'Настройки сайта доступны владельцу.');
     return json({ site: await saveSite(request, env, site) });
   }
-  if (section === 'items') {
+  if (section === 'items' || section === 'services') {
+    const catalog = section === 'items' ? catalogs.menu : catalogs.services;
     if (key === 'link' && method === 'PUT') {
-      await saveMenuLink(request, url, db, site);
+      await saveCatalogLink(request, url, db, site, catalog);
       return json({ ok: true });
     }
-    if (key === 'import' && method === 'POST') return json(await importMenu(request, db, site), 201);
+    if (key === 'import' && method === 'POST') return json(await importCatalog(request, db, site, catalog), 201);
     if (key === 'order' && method === 'PUT') {
-      await moveItem(request, db, site.id);
+      await moveItem(request, db, site.id, catalog);
       return json({ ok: true });
     }
     if (!key && method === 'POST') {
       const { fields, photo } = await itemInput(request);
       const photoKey = await uploadPhoto(env, photo);
       try {
-        await q(db, `INSERT INTO items (id, site_id, name, category, description, price, available, created_at, photo_key)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, newId(), site.id, ...fields, new Date().toISOString(), photoKey).run();
+        await q(db, `INSERT INTO items (id, site_id, catalog, name, category, description, price, available, created_at, photo_key)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, newId(), site.id, catalog.kind, ...fields, new Date().toISOString(), photoKey).run();
       } catch (error) {
         await removePhotoIfUnused(env, photoKey);
         throw error;
@@ -1385,12 +1414,13 @@ async function api(request, url, env) {
       return json({ ok: true }, 201);
     }
     if (key && method === 'PUT') {
-      await editItem(request, env, site, key);
+      await editItem(request, env, site, key, catalog);
       return json({ ok: true });
     }
     if (key && method === 'DELETE') {
       const version = expectedVersion(request);
-      const item = await q(db, 'DELETE FROM items WHERE site_id=? AND id=? AND edit_version=? RETURNING photo_key', site.id, key, version).first();
+      const item = await q(db, 'DELETE FROM items WHERE site_id=? AND catalog=? AND id=? AND edit_version=? RETURNING photo_key',
+        site.id, catalog.kind, key, version).first();
       if (!item) fail(412, itemChanged);
       await removePhotoIfUnused(env, item.photo_key);
       return json({ ok: true });
@@ -1597,7 +1627,7 @@ async function publicPage(request, url, env, assets, ctx) {
   const alias = url.pathname.match(nfcPath);
   const isAlias = !!alias || url.pathname === '/';
   const tipRoute = url.pathname.match(/^\/([a-z0-9-]+)\/tips(?:\/(result|[a-z-]+)(?:\/([0-9a-f-]+))?)?\/?$/);
-  const route = isAlias || tipRoute ? null : url.pathname.match(/^\/([a-z0-9-]+)(?:\/(menu|go\/([a-z]+)))?\/?$/);
+  const route = isAlias || tipRoute ? null : url.pathname.match(/^\/([a-z0-9-]+)(?:\/(menu|services|go\/([a-z]+)))?\/?$/);
   const slug = alias?.[1] || route?.[1] || tipRoute?.[1];
   const [, , section, action] = route || [];
   const token = alias?.[2] || url.searchParams.get('nfc');
@@ -1631,10 +1661,15 @@ async function publicPage(request, url, env, assets, ctx) {
     if (!previewAllowed && request.method === 'GET') await trackAnalytics(ctx, count(db, site, review ? 'maps' : action, source));
     return redirect(destination);
   }
-  const wantsMenu = section === 'menu';
-  if (wantsMenu && site.menu_url && new URL(site.menu_url).origin !== url.origin) {
+  if (section === 'menu' && site.legacy_services && !site.show_menu && !site.menu_url &&
+      !await q(db, "SELECT 1 FROM items WHERE site_id=? AND catalog='menu' LIMIT 1", site.id).first()) {
+    return redirect('/' + site.slug + '/services' + query);
+  }
+  const catalog = Object.hasOwn(catalogs, section) ? catalogs[section] : null;
+  const external = catalog && site[catalog.url];
+  if (external && new URL(external).origin !== url.origin) {
     if (!previewAllowed && request.method === 'GET') await trackAnalytics(ctx, count(db, site, 'menu', source));
-    return redirect(site.menu_url);
+    return redirect(external);
   }
   const { nfc_key, website_url, hidden_links, guest_version, maps_url, show_maps, yandex_review_url, google_review_url, ...publicSite } = siteWithPhotos(site, !!previewAllowed);
   for (const key of hidden_links) delete publicSite[key];
@@ -1644,14 +1679,15 @@ async function publicPage(request, url, env, assets, ctx) {
     delete publicSite.wifi_password;
   }
   if (site.show_website) publicSite.website_url = website_url;
-  const items = wantsMenu
-    ? await all(db, 'SELECT id, name, category, description, price, photo_key FROM items WHERE site_id=? AND available=1 ORDER BY ' + itemOrder, site.id)
+  const items = catalog
+    ? await all(db, 'SELECT id, name, category, description, price, photo_key FROM items WHERE site_id=? AND catalog=? AND available=1 ORDER BY ' + itemOrder,
+      site.id, catalog.kind)
     : [];
-  const tips = wantsMenu ? [] : activeTips(await tipSettings(db, site.id), env);
-  const response = shell(assets, { view: wantsMenu ? 'menu' : 'public', site: publicSite,
+  const tips = catalog ? [] : activeTips(await tipSettings(db, site.id), env);
+  const response = shell(assets, { view: catalog?.kind ?? 'public', site: publicSite,
     items: items.map((item) => itemWithPhoto(item, !!previewAllowed)), tips,
-    reviewProviders: wantsMenu ? [] : reviewProviders(site), query, draftPreview: site.status === 'draft' });
-  if (!previewAllowed && request.method === 'GET') await trackAnalytics(ctx, count(db, site, wantsMenu ? 'menu' : 'visit', source));
+    reviewProviders: catalog ? [] : reviewProviders(site), query, draftPreview: site.status === 'draft' });
+  if (!previewAllowed && request.method === 'GET') await trackAnalytics(ctx, count(db, site, catalog ? 'menu' : 'visit', source));
   return response;
 }
 
@@ -1687,6 +1723,8 @@ export function createApp(assets) {
         }
         if (path === '/favicon.ico') return new Response(null, { status: 204 });
         if (path === '/about' || path === '/about/') return htmlResponse(request.method === 'HEAD' ? null : assets['about.html'].text);
+        const legacySection = path.match(/^\/admin\/sites\/([a-z0-9-]+)\/(bookings|feedback|analytics|tips)\/?$/);
+        if (legacySection) return redirect('/admin/' + legacySection[2] + '?site=' + legacySection[1]);
         if ((path === '/' && !url.searchParams.has('nfc')) || path === '/admin' || path.startsWith('/admin/')) return shell(assets);
         return await publicPage(request, url, env, assets, ctx);
       } catch (error) {

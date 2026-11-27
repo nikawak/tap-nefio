@@ -7,6 +7,7 @@ const types = {
   'app.js': 'text/javascript; charset=utf-8',
   'styles.css': 'text/css; charset=utf-8',
   'menu-template.json': 'application/json; charset=utf-8',
+  'service-template.json': 'application/json; charset=utf-8',
   'moka.jpg': 'image/jpeg',
   'coffe1/cover.jpg': 'image/jpeg',
   'coffe1/logo.png': 'image/png',

@@ -22,13 +22,16 @@ const items = [
 export function seedDemo(db) {
   if (db.prepare('SELECT COUNT(*) AS count FROM sites').get().count) return;
   const addSite = db.prepare('INSERT INTO sites (id,slug,name,type,description,theme,cover_url,status,maps_url,telegram_url,instagram_url,vk_url,nfc_key,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-  const addItem = db.prepare('INSERT INTO items (id,site_id,name,category,description,price,created_at) VALUES (?,?,?,?,?,?,?)');
+  const hasCatalog = db.prepare("SELECT 1 FROM pragma_table_info('items') WHERE name='catalog'").get();
+  const addItem = db.prepare(`INSERT INTO items (id,site_id,name,category,description,price,created_at${hasCatalog ? ',catalog' : ''})
+    VALUES (?,?,?,?,?,?,?${hasCatalog ? ',?' : ''})`);
   const event = db.prepare('INSERT INTO events (site_id,day,kind,source,count) VALUES (?,?,?,?,?)');
   db.exec('BEGIN');
   try {
     for (const site of sites) addSite.run(...site);
     for (const [index, item] of items.entries()) {
-      addItem.run('demo-item-' + index, ...item, new Date(1767268800000 + index * 1000).toISOString());
+      const catalog = item[0] === 'forma' ? 'services' : 'menu';
+      addItem.run('demo-item-' + index, ...item, new Date(1767268800000 + index * 1000).toISOString(), ...(hasCatalog ? [catalog] : []));
     }
     db.prepare('INSERT INTO site_admins (site_id,email) VALUES (?,?)').run('moka', 'manager@demo.tap');
     const nfc = [116, 159, 133, 193, 161, 247, 239];
